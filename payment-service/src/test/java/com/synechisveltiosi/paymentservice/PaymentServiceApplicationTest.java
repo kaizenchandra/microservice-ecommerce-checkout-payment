@@ -1,17 +1,23 @@
 package com.synechisveltiosi.paymentservice;
 
+import com.synechisveltiosi.paymentservice.application.PaymentProvider;
+import com.synechisveltiosi.paymentservice.domain.ChargeResult;
+import com.synechisveltiosi.platform.contracts.Money;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.SpringApplication;
-import org.springframework.context.ConfigurableApplicationContext;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import java.math.BigDecimal;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 class PaymentServiceApplicationTest {
-    @Test
-    void applicationStarts() {
-        try (ConfigurableApplicationContext context = SpringApplication.run(PaymentServiceApplication.class,
-                "--spring.main.web-application-type=none")) {
-            assertNotNull(context.getBean(PaymentServiceApplication.class));
-        }
+    @Test void onlyTerminalProviderResultsCanFinalizePayments() {
+        assertThrows(IllegalArgumentException.class, () -> new ChargeResult("UNKNOWN", null));
+        assertThrows(IllegalArgumentException.class, () -> new ChargeResult("COMPLETED", null));
+        assertEquals("FAILED", new ChargeResult("FAILED", null).status());
+    }
+    @Test void providerAcceptsOnlyBoundedDemoInputs() {
+        var amount = new Money(new BigDecimal("25.00"), Currency.getInstance("USD"));
+        assertThrows(IllegalArgumentException.class, () -> new PaymentProvider.Request(UUID.randomUUID(), amount, "not-a-demo-token"));
+        assertThrows(IllegalArgumentException.class, () -> new PaymentProvider.Request(UUID.randomUUID(), new Money(BigDecimal.ZERO, Currency.getInstance("USD")), "tok_success"));
+        assertEquals(amount, new PaymentProvider.Request(UUID.randomUUID(), amount, "tok_timeout").total());
     }
 }

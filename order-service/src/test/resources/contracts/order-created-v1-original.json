@@ -1,0 +1,42 @@
+{
+  "eventId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+  "eventType": "OrderCreated",
+  "correlationId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+  "causationId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+  "aggregateType": "Order",
+  "aggregateId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "aggregateVersion": 1,
+  "occurredAt": "2026-09-09T00:00:00Z",
+  "schemaVersion": 1,
+  "traceparent": null,
+  "payload": {
+    "orderId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "customerId": "11111111-1111-1111-1111-111111111111",
+    "cartId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    "cartVersion": 1,
+    "items": [
+      {
+        "productId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "sku": "DEMO-1",
+        "name": "Demo item",
+        "quantity": 2,
+        "unitPrice": {
+          "amount": 12.5,
+          "currency": "USD"
+        }
+      }
+    ],
+    "total": {
+      "amount": 25,
+      "currency": "USD"
+    },
+    "paymentToken": "tok_success",
+    "shippingAddress": {
+      "recipient": "Demo Buyer",
+      "line1": "1 Test Street",
+      "city": "Test City",
+      "postalCode": "12345",
+      "country": "US"
+    }
+  }
+}

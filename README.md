@@ -1,10 +1,10 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–3 are implemented: architecture, runnable infrastructure, and product/cart APIs.**
+the requested thirteen phases. **Phases 1–6 are implemented: architecture, infrastructure, product/cart APIs, event-sourced orders, inventory reservations, and durable simulated payments.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
-all ten applications. Product/cart APIs are available through the gateway with local
-authentication. Checkout APIs and saga consumers remain pending.
+all ten applications. Product/cart/order APIs are available through the gateway with local
+authentication. Checkout APIs and shipping/compensation/order-status consumers remain pending.
 
 ## Start the Compose stack
 
@@ -19,6 +19,12 @@ See [the infrastructure guide](infrastructure/README.md) for credentials, endpoi
 health checks, infrastructure-only startup and recovery commands.
 See [Phase 3: Product and Cart](docs/phase-3-product-cart.md) for executable curl examples,
 credentials, versioned mutations, failure experiments and Testcontainers coverage.
+See [Phase 4: Order and Outbox](docs/phase-4-order-outbox.md) for order creation, replay,
+idempotency, publication and failure recovery.
+See [Phase 5: Inventory](docs/phase-5-inventory.md) for stock, reservations, release,
+optimistic concurrency and OrderCreated consumption.
+See [Phase 6: Payment](docs/phase-6-payment.md) for simulated charges, idempotency,
+UNKNOWN outcomes and durable recovery.
 
 ## Current directory structure
 
@@ -49,6 +55,12 @@ ecommerce-platform/                 # this repository (existing folder name reta
 All ten services have executable jars, Dockerfiles, health and metrics configuration.
 Product and cart now also contain domain models, JPA repositories, Flyway migrations,
 secured REST APIs, DTOs, validation/error handling, unit and PostgreSQL integration tests.
+Order includes an append-only JDBC event store, atomic command idempotency/outbox writes,
+reconstructed reads, secured APIs and ordered Kafka publication with integration tests.
+Inventory now adds versioned stock, transactional reservations/inbox/outbox, an OrderCreated
+consumer, administrative APIs and PostgreSQL/Kafka tests.
+Payment adds durable intents, an InventoryReserved consumer, a persisted provider simulator,
+lease-based recovery and terminal payment events through its outbox.
 The remaining service foundations gain their business implementation in later phases.
 
 ## Build and test
@@ -70,9 +82,9 @@ curl --fail http://localhost:9090/-/ready
 python3 infrastructure/scripts/verify-catalog-cart.py --outage
 ```
 
-Product/cart business APIs require demo credentials from `.env`; see the Phase 3 guide.
+Product/cart/order business APIs require demo credentials from `.env`; see the Phase 3 guide.
 Their readiness includes PostgreSQL. Other applications still expose foundation health.
-The gateway routes product/cart APIs; JWT and other service routes arrive later.
+The gateway also routes inventory and payment APIs. JWT and other service routes arrive later.
 
 Build/start a single service from source:
 
@@ -107,10 +119,10 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 1 | Architecture, module foundation, generic contracts | Implemented |
 | 2 | Compose, isolated PostgreSQL databases, Kafka KRaft, Redis, observability infrastructure | Implemented |
 | 3 | Product and cart APIs, migrations, seed data | Implemented |
-| 4 | Event-sourced order, outbox and reconstruction | Next |
-| 5 | Inventory reservations and optimistic concurrency | Pending |
-| 6 | Payment simulator, persisted idempotency and recovery | Pending |
-| 7 | Choreography, shipping, notifications and compensation | Pending |
+| 4 | Event-sourced order, outbox and reconstruction | Implemented |
+| 5 | Inventory reservations and optimistic concurrency | Implemented |
+| 6 | Payment simulator, persisted idempotency and recovery | Implemented |
+| 7 | Choreography, shipping, notifications and compensation | Next |
 | 8 | CQRS projection and rebuild | Pending |
 | 9 | Order details composition | Pending |
 | 10 | Resilience, retries, DLT and failure controls | Pending |
@@ -159,3 +171,51 @@ Compose databases, including first-run Flyway and Hibernate schema validation. T
 real routed smoke test passed with an actual product-service outage and recovery:
 failed catalog access returned 503 without changing cart version or quantities.
 Product-service was restored; no seed products were changed. The stack remains running.
+
+## Phase 4 verification record
+
+On 2026-09-09, `mvn clean verify` with Java 21 passed all 12 reactor modules:
+33 tests, zero failures/errors/skips. Order contributes four domain/contract tests and
+six PostgreSQL/Kafka integration tests, including concurrent commands/pollers, rollback,
+ordered publication and stable duplicate identity after an acknowledgement/rollback.
+
+The source-built Compose order-service and gateway are running healthy. Read-only routed
+checks returned health 200, unauthenticated order access 401 and an authenticated missing
+order 404. After user approval, `python3 infrastructure/scripts/verify-orders.py` passed
+against the running gateway: authorization, idempotent creation, reconstruction, version
+conflicts and Kafka acknowledgement. It retained synthetic order
+`4d124df9-8bee-48ec-97db-bdac907d4fdb` with two immutable events and published outbox rows.
+Broker publication was also verified in isolated Testcontainers.
+
+## Phase 5 verification record
+
+On 2026-09-09, `mvn clean verify` with Java 21 passed all 12 modules:
+41 tests, zero failures/errors/skips. Inventory contributes two unit tests and seven
+PostgreSQL/Kafka integration tests covering stock constraints, reservation/release races,
+rollback, event identity/schema validation and real Kafka consumption/publication.
+`docker compose config --quiet` and `git diff --check` passed.
+
+After explicit user approval, the source-built inventory service and gateway were deployed
+and are running healthy. Routed checks verified 401/403 access controls and seeded stock.
+Inventory consumed retained synthetic order `4d124df9-8bee-48ec-97db-bdac907d4fdb`,
+correctly rejected its unstocked product with STOCK_NOT_FOUND, and published
+InventoryReservationFailed with Kafka acknowledgement. Successful reservations, release and
+concurrency behavior were verified in isolated PostgreSQL/Kafka containers.
+
+## Phase 6 verification record
+
+On 2026-09-09, Java 21 `mvn clean verify` passed all 12 modules:
+52 tests, zero failures/errors/skips. Payment contributes two unit tests and ten
+PostgreSQL/Kafka integration tests. Verification includes successful/declined charges,
+response loss, transient provider failures, concurrency, changed instructions, expired-lease
+fencing, provider-commit/application-rollback recovery, automatic recovery after an
+application restart, API ownership and actual Kafka duplicate publication after rollback.
+Compose configuration and whitespace checks passed.
+
+After explicit user approval, the source-built payment service and gateway were deployed
+and are running healthy. Routed checks verified health 200, unauthenticated payment access
+401, customer access to provider diagnostics 403 and missing payment 404. The payment
+consumer caught up with the retained inventory event (offset 1 of 1, lag 0; the other two
+partitions were empty). The inventory-rejected synthetic order correctly has no payment.
+Successful charges, declines and recovery were verified in isolated PostgreSQL/Kafka tests;
+no new shared-stack charge records were created by the deployment checks.

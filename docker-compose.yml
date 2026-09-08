@@ -188,6 +188,8 @@ services:
       PRODUCT_SERVICE_URL: http://product-service:8081
       CART_SERVICE_URL: http://cart-service:8082
       ORDER_SERVICE_URL: http://order-service:8084
+      INVENTORY_SERVICE_URL: http://inventory-service:8085
+      PAYMENT_SERVICE_URL: http://payment-service:8086
     ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -283,6 +285,10 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8085
+      SPRING_PROFILES_ACTIVE: demo
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory_db
       SPRING_DATASOURCE_USERNAME: inventory_owner
       SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:?Run the environment initializer}
@@ -300,6 +306,9 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8086
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
       SPRING_DATASOURCE_USERNAME: payment_owner
       SPRING_DATASOURCE_PASSWORD: ${PAYMENT_DB_PASSWORD:?Run the environment initializer}

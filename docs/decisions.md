@@ -71,3 +71,16 @@ Hibernate validation against real PostgreSQL, including a two-writer barrier tes
 A controlled HTTP catalog fixture makes transient failure tests deterministic; a
 separate gateway/Compose smoke test verifies real interservice communication. The
 tradeoff is a Docker requirement for Maven verify; tests do not silently skip it.
+
+## ADR 018 — Durable simulated provider and payment recovery
+
+Accept inventory input into a durable payment intent before contacting the simulator.
+Use expiring, token-fenced worker claims and a stable order/payment key for reconciliation
+and charges. The simulator ledger commits independently, allowing response-loss and
+application-rollback tests to prove that recovery reuses an existing charge. The application
+commits terminal payment state and outbox publication intent together.
+
+This models an external provider's durability without real funds or credentials. Both
+ledgers share payment_db in the demo; real providers require their own idempotency and
+lookup guarantees and bounded network calls. UNKNOWN is never converted to DECLINED merely
+because a call timed out. Refund and compensation contracts are deferred to Phase 7.

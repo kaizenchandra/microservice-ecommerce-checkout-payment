@@ -20,7 +20,7 @@ public final class OrderDtos {
     private OrderDtos() { }
     public record Create(@NotNull UUID orderId, @NotNull UUID customerId, @NotNull UUID cartId,
                          @NotNull @PositiveOrZero Long cartVersion,
-                         @NotEmpty @Size(max = 50) List<@NotNull OrderEvents.Line> items,
+                         @NotEmpty @Size(max = 50) List<OrderEvents.@NotNull Line> items,
                          @NotNull @Pattern(regexp = "tok_success|tok_declined|tok_timeout|tok_error") String paymentToken,
                          @NotNull OrderEvents.Address shippingAddress,
                          @Pattern(regexp = "WEB|MOBILE") String salesChannel) {

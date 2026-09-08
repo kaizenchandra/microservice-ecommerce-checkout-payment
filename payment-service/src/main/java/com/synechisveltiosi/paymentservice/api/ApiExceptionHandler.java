@@ -1,6 +1,6 @@
-package com.synechisveltiosi.orderservice.api;
+package com.synechisveltiosi.paymentservice.api;
 
-import com.synechisveltiosi.orderservice.application.ApiException;
+import com.synechisveltiosi.paymentservice.application.ApiException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.DataAccessResourceFailureException;

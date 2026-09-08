@@ -1,6 +1,41 @@
 spring:
   application:
     name: payment-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/payment_db}
+    username: ${DB_USER:payment_owner}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+      connection-timeout: 3000
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: payment-charges-v1
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        max.poll.records: 10
+    listener:
+      ack-mode: record
+      auto-startup: ${PAYMENT_LISTENER_ENABLED:true}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1
+        max.block.ms: 1000
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 4000
   threads:
     virtual:
       enabled: true
@@ -14,6 +49,9 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
+      group:
+        readiness:
+          include: readinessState,db
       probes:
         enabled: true
   metrics:
@@ -23,3 +61,18 @@ logging:
   structured:
     format:
       console: ecs
+demo:
+  auth:
+    customer-password: ${DEMO_CUSTOMER_PASSWORD}
+    second-customer-password: ${DEMO_SECOND_CUSTOMER_PASSWORD}
+    admin-password: ${DEMO_ADMIN_PASSWORD}
+outbox:
+  enabled: ${OUTBOX_ENABLED:true}
+  poll-delay-ms: 1000
+  batch-size: 10
+payment:
+  recovery:
+    enabled: ${PAYMENT_RECOVERY_ENABLED:true}
+    poll-delay-ms: 1000
+    batch-size: 10
+    lease-seconds: 30

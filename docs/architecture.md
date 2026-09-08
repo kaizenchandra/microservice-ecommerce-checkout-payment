@@ -1,9 +1,10 @@
 # Phase 1 — architecture and implementation contract
 
-Status: phases 1–3 are implemented, including product/cart persistence, secured APIs and
-gateway routing. See [Phase 3](phase-3-product-cart.md) and
+Status: phases 1–6 are implemented, including product/cart APIs, event-sourced orders,
+transactional outbox publication, inventory reservations, simulated payment recovery and gateway routing. See [Phase 3](phase-3-product-cart.md),
+[Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md) and
 [infrastructure](../infrastructure/README.md). Checkout/saga workflows below remain
-the implementation design for phases 4–13.
+the implementation design for the remaining phases.
 
 ## Ownership and boundaries
 
@@ -151,7 +152,7 @@ send the next business step to another service.
 
 | Topic | Producer | Events | Main consumers |
 |---|---|---|---|
-| order.events | Order | OrderCreated, OrderCompleted, OrderCancelled | Inventory, Query, Notification |
+| order.events | Order | OrderCreated, OrderNoteAdded, OrderCompleted, OrderCancelled | Inventory, Query, Notification |
 | inventory.events | Inventory | InventoryReserved, InventoryReservationFailed, InventoryReleased | Payment, Order, Query |
 | payment.events | Payment | PaymentCompleted, PaymentFailed, PaymentRefunded | Shipping, Inventory, Order, Query |
 | shipping.events | Shipping | ShipmentCreated, ShipmentFailed | Payment, Order, Query |
