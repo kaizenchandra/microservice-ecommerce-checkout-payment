@@ -1,0 +1,371 @@
+name: ecommerce-platform
+
+x-runtime: &runtime
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-app-env: &app-env
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Run the environment initializer}
+  MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+  JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=2
+
+x-app-health: &app-health
+  interval: 10s
+  timeout: 5s
+  retries: 12
+  start_period: 90s
+
+services:
+  postgres:
+    <<: *runtime
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_USER: platform_admin
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run the environment initializer}
+      PRODUCT_DB_PASSWORD: ${PRODUCT_DB_PASSWORD:?Run the environment initializer}
+      CART_DB_PASSWORD: ${CART_DB_PASSWORD:?Run the environment initializer}
+      CHECKOUT_DB_PASSWORD: ${CHECKOUT_DB_PASSWORD:?Run the environment initializer}
+      ORDER_DB_PASSWORD: ${ORDER_DB_PASSWORD:?Run the environment initializer}
+      INVENTORY_DB_PASSWORD: ${INVENTORY_DB_PASSWORD:?Run the environment initializer}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:?Run the environment initializer}
+      SHIPPING_DB_PASSWORD: ${SHIPPING_DB_PASSWORD:?Run the environment initializer}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Run the environment initializer}
+      QUERY_DB_PASSWORD: ${QUERY_DB_PASSWORD:?Run the environment initializer}
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/01-databases.sh:/docker-entrypoint-initdb.d/01-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U platform_admin -d postgres && test -f /var/lib/postgresql/data/platform-initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  kafka:
+    <<: *runtime
+    image: apache/kafka:4.0.2
+    ports: ["127.0.0.1:${KAFKA_PORT:-9092}:9092"]
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:19092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://localhost:${KAFKA_PORT:-9092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes: ["kafka-data:/var/lib/kafka/data"]
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:19092", "--list"]
+      interval: 10s
+      timeout: 10s
+      retries: 18
+      start_period: 30s
+
+  kafka-init:
+    image: apache/kafka:4.0.2
+    restart: on-failure
+    depends_on:
+      kafka: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "/init/topics.sh"]
+    volumes: ["./infrastructure/kafka/topics.sh:/init/topics.sh:ro"]
+
+  kafka-ui:
+    <<: *runtime
+    build: {context: ., dockerfile: infrastructure/healthcheck/Dockerfile, target: kafka-ui}
+    ports: ["127.0.0.1:${KAFKA_UI_PORT:-8090}:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: checkout-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      DYNAMIC_CONFIG_ENABLED: "false"
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "/healthcheck", "http://localhost:8080/actuator/health"]
+      <<: *app-health
+
+  redis:
+    <<: *runtime
+    image: redis:7.4.5-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run the environment initializer}
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 128mb --maxmemory-policy allkeys-lru']
+    ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  prometheus:
+    <<: *runtime
+    image: prom/prometheus:v3.2.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"]
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infrastructure/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  tempo:
+    <<: *runtime
+    build: {context: ., dockerfile: infrastructure/healthcheck/Dockerfile, target: tempo}
+    command: ["-config.file=/etc/tempo.yml"]
+    volumes:
+      - ./infrastructure/tempo/tempo.yml:/etc/tempo.yml:ro
+      - tempo-data:/var/tempo
+    healthcheck:
+      test: ["CMD", "/healthcheck", "http://localhost:3200/ready"]
+      <<: *app-health
+
+  otel-collector:
+    <<: *runtime
+    build: {context: ., dockerfile: infrastructure/healthcheck/Dockerfile, target: collector}
+    command: ["--config=/etc/otelcol/config.yml"]
+    ports:
+      - "127.0.0.1:${OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"
+    volumes: ["./infrastructure/otel/collector.yml:/etc/otelcol/config.yml:ro"]
+    depends_on:
+      tempo: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/healthcheck", "http://localhost:13133/"]
+      <<: *app-health
+
+  grafana:
+    <<: *runtime
+    image: grafana/grafana:11.6.0
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3000}:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Run the environment initializer}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus: {condition: service_healthy}
+      tempo: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  api-gateway:
+    <<: *runtime
+    build: {context: ., dockerfile: api-gateway/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8080
+      PRODUCT_SERVICE_URL: http://product-service:8081
+      CART_SERVICE_URL: http://cart-service:8082
+      ORDER_SERVICE_URL: http://order-service:8084
+    ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8080/actuator/health/readiness"]
+
+  product-service:
+    <<: *runtime
+    build: {context: ., dockerfile: product-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8081
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
+      SPRING_PROFILES_ACTIVE: demo
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/product_db
+      SPRING_DATASOURCE_USERNAME: product_owner
+      SPRING_DATASOURCE_PASSWORD: ${PRODUCT_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8081/actuator/health/readiness"]
+
+  cart-service:
+    <<: *runtime
+    build: {context: ., dockerfile: cart-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8082
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
+      PRODUCT_SERVICE_URL: http://product-service:8081
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cart_db
+      SPRING_DATASOURCE_USERNAME: cart_owner
+      SPRING_DATASOURCE_PASSWORD: ${CART_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8082/actuator/health/readiness"]
+
+  checkout-service:
+    <<: *runtime
+    build: {context: ., dockerfile: checkout-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/checkout_db
+      SPRING_DATASOURCE_USERNAME: checkout_owner
+      SPRING_DATASOURCE_PASSWORD: ${CHECKOUT_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8083/actuator/health/readiness"]
+
+  order-service:
+    <<: *runtime
+    build: {context: ., dockerfile: order-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8084
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
+      DEMO_CHECKOUT_PASSWORD: ${DEMO_CHECKOUT_PASSWORD:?Run the environment initializer}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/order_db
+      SPRING_DATASOURCE_USERNAME: order_owner
+      SPRING_DATASOURCE_PASSWORD: ${ORDER_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8084/actuator/health/readiness"]
+
+  inventory-service:
+    <<: *runtime
+    build: {context: ., dockerfile: inventory-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8085
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/inventory_db
+      SPRING_DATASOURCE_USERNAME: inventory_owner
+      SPRING_DATASOURCE_PASSWORD: ${INVENTORY_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8085/actuator/health/readiness"]
+
+  payment-service:
+    <<: *runtime
+    build: {context: ., dockerfile: payment-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8086
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_db
+      SPRING_DATASOURCE_USERNAME: payment_owner
+      SPRING_DATASOURCE_PASSWORD: ${PAYMENT_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8086/actuator/health/readiness"]
+
+  shipping-service:
+    <<: *runtime
+    build: {context: ., dockerfile: shipping-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8087
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shipping_db
+      SPRING_DATASOURCE_USERNAME: shipping_owner
+      SPRING_DATASOURCE_PASSWORD: ${SHIPPING_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8087/actuator/health/readiness"]
+
+  notification-service:
+    <<: *runtime
+    build: {context: ., dockerfile: notification-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8088
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
+      SPRING_DATASOURCE_USERNAME: notification_owner
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8088/actuator/health/readiness"]
+
+  order-query-service:
+    <<: *runtime
+    build: {context: ., dockerfile: order-query-service/Dockerfile}
+    environment:
+      <<: *app-env
+      SERVER_PORT: 8089
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/query_db
+      SPRING_DATASOURCE_USERNAME: query_owner
+      SPRING_DATASOURCE_PASSWORD: ${QUERY_DB_PASSWORD:?Run the environment initializer}
+    depends_on:
+      postgres: {condition: service_healthy}
+      kafka-init: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *app-health
+      test: ["CMD", "/healthcheck", "http://localhost:8089/actuator/health/readiness"]
+
+volumes:
+  postgres-data:
+  kafka-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
+  tempo-data:
