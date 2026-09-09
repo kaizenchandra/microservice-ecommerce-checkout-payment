@@ -8,10 +8,12 @@ import java.util.UUID;
 
 /** Reconstructed entirely from events; notes do not alter price or shipping instructions. */
 public final class OrderAggregate {
-    public enum Status { PENDING }
+    public enum Status { PENDING, COMPENSATING, COMPLETED, CANCELLED }
     public record Note(String text, Instant occurredAt) { }
     private final UUID id;
     private long version;
+    private Status terminal;
+    private final java.util.Set<OrderEvents.Fact> facts = java.util.EnumSet.noneOf(OrderEvents.Fact.class);
     private OrderEvents.OrderCreated created;
     private Instant createdAt;
     private Instant updatedAt;
@@ -36,6 +38,21 @@ public final class OrderAggregate {
                 created = event;
                 createdAt = envelope.occurredAt();
             }
+            case OrderEvents.OrderFactRecorded event -> {
+                if (created == null || terminal != null || facts.contains(event.fact())) throw new IllegalStateException("Invalid order fact history");
+                rejectContradiction(event.fact());
+                facts.add(event.fact());
+            }
+            case OrderEvents.OrderCompleted event -> {
+                if (terminal != null || eligibleTerminal() != Status.COMPLETED || !id.equals(event.orderId()) || !created.customerId().equals(event.customerId()))
+                    throw new IllegalStateException("Order completion lacks prerequisites");
+                terminal = Status.COMPLETED;
+            }
+            case OrderEvents.OrderCancelled event -> {
+                if (terminal != null || eligibleTerminal() != Status.CANCELLED || !id.equals(event.orderId()) || !created.customerId().equals(event.customerId()))
+                    throw new IllegalStateException("Order cancellation lacks compensation");
+                terminal = Status.CANCELLED;
+            }
             case OrderEvents.OrderNoteAdded event -> {
                 if (created == null || !created.customerId().equals(event.customerId()) || notes.size() >= 20) {
                     throw new IllegalStateException("Invalid order note history");
@@ -53,7 +70,31 @@ public final class OrderAggregate {
     }
     public UUID id() { return id; }
     public long version() { return version; }
-    public Status status() { return Status.PENDING; }
+    public Status status() {
+        if (terminal != null) return terminal;
+        return facts.contains(OrderEvents.Fact.PaymentFailed) || facts.contains(OrderEvents.Fact.ShipmentFailed)
+                || facts.contains(OrderEvents.Fact.PaymentRefunded) ? Status.COMPENSATING : Status.PENDING;
+    }
+    public boolean hasFact(OrderEvents.Fact fact) { return facts.contains(fact); }
+    public boolean terminal() { return terminal != null; }
+    public void validateFact(OrderEvents.Fact fact) { rejectContradiction(fact); }
+    private void rejectContradiction(OrderEvents.Fact fact) {
+        for (var pair : java.util.List.of(
+                java.util.Set.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.InventoryReservationFailed),
+                java.util.Set.of(OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.PaymentFailed),
+                java.util.Set.of(OrderEvents.Fact.ShipmentCreated, OrderEvents.Fact.ShipmentFailed))) {
+            if (pair.contains(fact) && pair.stream().anyMatch(other -> other != fact && facts.contains(other))) throw new IllegalArgumentException("Contradictory saga outcome");
+        }
+    }
+    public Status eligibleTerminal() {
+        if (facts.contains(OrderEvents.Fact.InventoryReservationFailed)) return Status.CANCELLED;
+        if (facts.containsAll(java.util.Set.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentFailed, OrderEvents.Fact.InventoryReleased))) return Status.CANCELLED;
+        if (facts.containsAll(java.util.Set.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentFailed,
+                OrderEvents.Fact.PaymentRefunded, OrderEvents.Fact.InventoryReleased))) return Status.CANCELLED;
+        if (facts.containsAll(java.util.Set.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentCreated))
+                && !facts.contains(OrderEvents.Fact.PaymentRefunded) && !facts.contains(OrderEvents.Fact.InventoryReleased)) return Status.COMPLETED;
+        return null;
+    }
     public OrderEvents.OrderCreated snapshot() { return created; }
     public List<Note> notes() { return List.copyOf(notes); }
     public Instant createdAt() { return createdAt; }

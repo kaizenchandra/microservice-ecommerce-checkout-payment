@@ -1,6 +1,31 @@
 spring:
   application:
     name: order-query-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/query_db}
+    username: ${DB_USER:query_owner}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 8
+      connection-timeout: 3000
+  flyway:
+    enabled: true
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: order-projection-v1
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        max.poll.records: 10
+    listener:
+      ack-mode: record
+      auto-startup: ${QUERY_LISTENER_ENABLED:true}
   threads:
     virtual:
       enabled: true
@@ -14,6 +39,9 @@ management:
         include: health,info,metrics,prometheus
   endpoint:
     health:
+      group:
+        readiness:
+          include: readinessState,db
       probes:
         enabled: true
   metrics:
@@ -23,3 +51,13 @@ logging:
   structured:
     format:
       console: ecs
+demo:
+  auth:
+    customer-password: ${DEMO_CUSTOMER_PASSWORD}
+    second-customer-password: ${DEMO_SECOND_CUSTOMER_PASSWORD}
+    admin-password: ${DEMO_ADMIN_PASSWORD}
+projection:
+  rebuild:
+    enabled: ${PROJECTION_REBUILD_ENABLED:true}
+    poll-delay-ms: 500
+    batch-size: 100

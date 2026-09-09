@@ -1,17 +1,10 @@
 package com.synechisveltiosi.shippingservice;
-
+import com.synechisveltiosi.shippingservice.domain.ShippingEvents;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.SpringApplication;
-import org.springframework.context.ConfigurableApplicationContext;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
+import static org.junit.jupiter.api.Assertions.*;
 class ShippingServiceApplicationTest {
-    @Test
-    void applicationStarts() {
-        try (ConfigurableApplicationContext context = SpringApplication.run(ShippingServiceApplication.class,
-                "--spring.main.web-application-type=none")) {
-            assertNotNull(context.getBean(ShippingServiceApplication.class));
-        }
+    @Test void requiresBoundedSyntheticAddress() {
+        assertThrows(IllegalArgumentException.class, () -> new ShippingEvents.Address("", "Street", "City", "12345", "US"));
+        assertEquals("ZZ", new ShippingEvents.Address("Demo", "Street", "City", "12345", "ZZ").country());
     }
 }

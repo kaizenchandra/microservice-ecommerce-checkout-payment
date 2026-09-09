@@ -1,5 +1,8 @@
 # Phase 4 — Order, event sourcing and transactional outbox
 
+The stage-specific behavior below is extended by [Phase 7](phase-7-saga.md), which now
+implements order outcomes, automatic compensation, refunds, shipping and notifications.
+
 Order now accepts a trusted priced snapshot, reconstructs every read from persisted
 events, and publishes those events to `order.events`. The gateway routes `/api/orders`.
 Checkout orchestration, inventory/payment/shipping consumers and terminal order states

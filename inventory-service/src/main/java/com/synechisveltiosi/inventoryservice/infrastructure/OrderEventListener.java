@@ -18,7 +18,7 @@ public class OrderEventListener {
         var node = json.readTree(record.value());
         String type = node.required("eventType").asString();
         // Known order facts that do not reserve stock. Future types must be explicitly classified.
-        if (java.util.Set.of("OrderNoteAdded", "OrderCompleted", "OrderCancelled").contains(type)) return;
+        if (java.util.Set.of("OrderNoteAdded", "OrderFactRecorded", "OrderCompleted", "OrderCancelled").contains(type)) return;
         if (!"OrderCreated".equals(type)) throw new IllegalArgumentException("Unsupported order event type");
         var event = json.readValue(record.value(),
                 new tools.jackson.core.type.TypeReference<EventEnvelope<InventoryEvents.OrderCreated>>() { });

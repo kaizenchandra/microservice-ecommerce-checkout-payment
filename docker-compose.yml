@@ -190,6 +190,9 @@ services:
       ORDER_SERVICE_URL: http://order-service:8084
       INVENTORY_SERVICE_URL: http://inventory-service:8085
       PAYMENT_SERVICE_URL: http://payment-service:8086
+      SHIPPING_SERVICE_URL: http://shipping-service:8087
+      NOTIFICATION_SERVICE_URL: http://notification-service:8088
+      ORDER_QUERY_SERVICE_URL: http://order-query-service:8089
     ports: ["127.0.0.1:${GATEWAY_PORT:-8080}:8080"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -326,6 +329,9 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8087
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shipping_db
       SPRING_DATASOURCE_USERNAME: shipping_owner
       SPRING_DATASOURCE_PASSWORD: ${SHIPPING_DB_PASSWORD:?Run the environment initializer}
@@ -343,6 +349,9 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8088
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_db
       SPRING_DATASOURCE_USERNAME: notification_owner
       SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?Run the environment initializer}
@@ -360,6 +369,9 @@ services:
     environment:
       <<: *app-env
       SERVER_PORT: 8089
+      DEMO_CUSTOMER_PASSWORD: ${DEMO_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_SECOND_CUSTOMER_PASSWORD: ${DEMO_SECOND_CUSTOMER_PASSWORD:?Run the environment initializer}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:?Run the environment initializer}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/query_db
       SPRING_DATASOURCE_USERNAME: query_owner
       SPRING_DATASOURCE_PASSWORD: ${QUERY_DB_PASSWORD:?Run the environment initializer}

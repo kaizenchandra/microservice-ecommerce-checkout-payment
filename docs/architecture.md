@@ -1,10 +1,11 @@
 # Phase 1 — architecture and implementation contract
 
-Status: phases 1–6 are implemented, including product/cart APIs, event-sourced orders,
-transactional outbox publication, inventory reservations, simulated payment recovery and gateway routing. See [Phase 3](phase-3-product-cart.md),
-[Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md) and
-[infrastructure](../infrastructure/README.md). Checkout/saga workflows below remain
-the implementation design for the remaining phases.
+Status: phases 1–8 are implemented, including product/cart APIs, event-sourced orders,
+transactional outbox publication, reservations, simulated payments/refunds, shipping,
+compensation, notifications, CQRS projections, rebuilds and gateway routing. See [Phase 3](phase-3-product-cart.md),
+[Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md), [Phase 7](phase-7-saga.md), [Phase 8](phase-8-projection.md) and
+[infrastructure](../infrastructure/README.md). The saga workflows below are implemented; checkout orchestration and remote order-details composition
+remain work for later phases.
 
 ## Ownership and boundaries
 
@@ -152,7 +153,7 @@ send the next business step to another service.
 
 | Topic | Producer | Events | Main consumers |
 |---|---|---|---|
-| order.events | Order | OrderCreated, OrderNoteAdded, OrderCompleted, OrderCancelled | Inventory, Query, Notification |
+| order.events | Order | OrderCreated, OrderNoteAdded, OrderFactRecorded, OrderCompleted, OrderCancelled | Inventory, Query, Notification |
 | inventory.events | Inventory | InventoryReserved, InventoryReservationFailed, InventoryReleased | Payment, Order, Query |
 | payment.events | Payment | PaymentCompleted, PaymentFailed, PaymentRefunded | Shipping, Inventory, Order, Query |
 | shipping.events | Shipping | ShipmentCreated, ShipmentFailed | Payment, Order, Query |

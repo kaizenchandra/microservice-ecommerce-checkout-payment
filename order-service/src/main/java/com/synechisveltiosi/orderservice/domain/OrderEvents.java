@@ -13,7 +13,7 @@ import java.util.UUID;
 
 public final class OrderEvents {
     private OrderEvents() { }
-    public sealed interface Event permits OrderCreated, OrderNoteAdded { }
+    public sealed interface Event permits OrderCreated, OrderNoteAdded, OrderFactRecorded, OrderCompleted, OrderCancelled { }
 
     public record Line(UUID productId, String sku, String name, int quantity, Money unitPrice) {
         public Line {
@@ -72,6 +72,14 @@ public final class OrderEvents {
             if (note == null || note.isBlank() || note.length() > 500) { throw new IllegalArgumentException("Invalid order note"); }
         }
     }
+
+    public enum Fact { InventoryReserved, InventoryReservationFailed, InventoryReleased,
+        PaymentCompleted, PaymentFailed, PaymentRefunded, ShipmentCreated, ShipmentFailed }
+    public record OrderFactRecorded(Fact fact) implements Event {
+        public OrderFactRecorded { Objects.requireNonNull(fact); }
+    }
+    public record OrderCompleted(UUID orderId, UUID customerId) implements Event { }
+    public record OrderCancelled(UUID orderId, UUID customerId) implements Event { }
 
     public static Money total(List<Line> items) {
         return items.stream().map(line -> line.unitPrice().multiply(line.quantity()))

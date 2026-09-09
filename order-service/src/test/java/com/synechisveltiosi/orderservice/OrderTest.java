@@ -24,7 +24,7 @@ class OrderTest {
                 "tok_success", new OrderEvents.Address("Demo Buyer", "1 Test Street", "Test City", "12345", "US"), null);
     }
     static EventEnvelope<OrderEvents.Event> envelope(UUID id, long version, OrderEvents.Event event) {
-        return new EventEnvelope<>(UUID.randomUUID(), event instanceof OrderEvents.OrderCreated ? "OrderCreated" : "OrderNoteAdded",
+        return new EventEnvelope<>(UUID.randomUUID(), new EventCodec(JsonMapper.builder().build()).type(event),
                 UUID.randomUUID(), UUID.randomUUID(), "Order", id, version, Instant.parse("2026-09-09T00:00:00Z"), 1, null, event);
     }
     @Test void reconstructsImmutableSnapshotAndNotesAndRejectsGaps() {
@@ -66,6 +66,29 @@ class OrderTest {
                 assertEquals(current.total(), old.total());
                 assertEquals(variant.equals("original") ? "WEB" : "MOBILE", current.salesChannel());
             }
+        }
+    }
+    @Test void terminalDecisionsWaitForAllFactsRegardlessOfDeliveryOrder() {
+        var scenarios = List.of(
+                List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentCreated),
+                List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentFailed, OrderEvents.Fact.InventoryReleased),
+                List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentFailed,
+                        OrderEvents.Fact.PaymentRefunded, OrderEvents.Fact.InventoryReleased));
+        for (var scenario : scenarios) for (int seed = 0; seed < 100; seed++) {
+            var ordered = new ArrayList<>(scenario); Collections.shuffle(ordered, new Random(seed));
+            var id = UUID.randomUUID(); var history = new ArrayList<EventEnvelope<OrderEvents.Event>>();
+            history.add(envelope(id, 1, command(id).event()));
+            for (int i = 0; i < ordered.size(); i++) {
+                history.add(envelope(id, i + 2, new OrderEvents.OrderFactRecorded(ordered.get(i))));
+                var aggregate = OrderAggregate.replay(id, history);
+                if (i < ordered.size() - 1) assertNull(aggregate.eligibleTerminal());
+            }
+            var aggregate = OrderAggregate.replay(id, history);
+            boolean success = scenario.contains(OrderEvents.Fact.ShipmentCreated);
+            assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, aggregate.eligibleTerminal());
+            OrderEvents.Event terminal = success ? new OrderEvents.OrderCompleted(id, CUSTOMER) : new OrderEvents.OrderCancelled(id, CUSTOMER);
+            history.add(envelope(id, history.size() + 1, terminal));
+            assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, OrderAggregate.replay(id, history).status());
         }
     }
     @Test void boundsNotesAndRejectsInvalidPrices() {

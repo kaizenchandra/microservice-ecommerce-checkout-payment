@@ -42,7 +42,7 @@ class InventoryApiIT {
     static String base;
     @BeforeAll static void start() {
         DB.start(); KAFKA.start();
-        context = SpringApplication.run(InventoryServiceApplication.class, "--server.port=0", "--outbox.enabled=false", "--spring.profiles.active=demo",
+        context = SpringApplication.run(InventoryServiceApplication.class, "--server.port=0", "--outbox.enabled=false", "--compensation.enabled=false", "--spring.profiles.active=demo",
                 "--spring.datasource.url=" + DB.getJdbcUrl(), "--spring.datasource.username=" + DB.getUsername(),
                 "--spring.datasource.password=" + DB.getPassword(), "--spring.kafka.bootstrap-servers=" + KAFKA.getBootstrapServers(),
                 "--demo.auth.customer-password=" + PASSWORD, "--demo.auth.second-customer-password=" + PASSWORD, "--demo.auth.admin-password=" + PASSWORD);
@@ -245,6 +245,17 @@ class InventoryApiIT {
         assertEquals(sent.get(0), sent.get(1));
         tx.executeWithoutResult(status -> assertTrue(publisher.publishOne()));
         assertEquals(2, json.readTree(sent.getLast()).get("aggregateVersion").asLong());
+    }
+    @Test void compensationArrivingBeforeReservationIsRetainedAndReleasedOnce() {
+        var event = event(stock(5), 2); var compensation = context.getBean(CompensationTransactions.class);
+        var failed = new EventEnvelope<>(UUID.randomUUID(), "PaymentFailed", event.correlationId(), event.eventId(), "Payment", event.aggregateId(), 1,
+                java.time.Instant.now(), 1, event.traceparent(), new CompensationTransactions.Payload(event.aggregateId(), CUSTOMER));
+        compensation.accept(failed); assertFalse(compensation.processOne());
+        inventory.reserve(event); assertTrue(compensation.processOne());
+        compensation.accept(failed); assertFalse(compensation.processOne());
+        assertEquals("RELEASED", transactions.reservation(event.aggregateId()).status());
+        assertEquals(0, transactions.getStock(event.payload().items().getFirst().productId()).reserved());
+        assertEquals(2, count("outbox_event", "aggregate_id", event.aggregateId()));
     }
     static int count(String table, String column, UUID id) {
         return jdbc.queryForObject("SELECT count(*) FROM " + table + " WHERE " + column + " = ?", Integer.class, id);

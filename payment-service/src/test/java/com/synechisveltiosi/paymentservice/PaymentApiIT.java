@@ -212,6 +212,17 @@ class PaymentApiIT {
         }
         assertEquals(0, count("processed_event", "event_id", event.eventId())); assertEquals(0, count("payment", "payment_id", event.aggregateId()));
     }
+    @Test void earlyShipmentFailureWaitsForChargeThenRefundsOnce() {
+        var event = event("tok_success"); var refunds = context.getBean(RefundTransactions.class); var refundWorker = context.getBean(RefundWorker.class);
+        var failed = new EventEnvelope<>(UUID.randomUUID(), "ShipmentFailed", event.correlationId(), event.eventId(), "Shipment", event.aggregateId(), 1,
+                Instant.now(), 1, event.traceparent(), new RefundTransactions.Input(event.aggregateId(), CUSTOMER));
+        refunds.accept(failed); assertFalse(refundWorker.processOne());
+        payments.accept(event); assertTrue(worker.processOne()); assertTrue(refundWorker.processOne());
+        refunds.accept(failed); assertFalse(refundWorker.processOne());
+        assertEquals("REFUNDED", refunds.get(event.aggregateId()).status());
+        assertEquals(1, jdbc.queryForObject("SELECT refund_count FROM provider_refund WHERE payment_id = ?", Integer.class, event.aggregateId()));
+        assertEquals(2, count("outbox_event", "aggregate_id", event.aggregateId()));
+    }
     @Test void applicationRestartAutomaticallyReconcilesLostProviderResponse() throws Exception {
         var event = event("tok_timeout"); payments.accept(event); assertTrue(worker.processOne());
         assertEquals("UNKNOWN", view(event.aggregateId()).status());

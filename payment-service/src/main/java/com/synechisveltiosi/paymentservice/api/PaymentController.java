@@ -14,8 +14,9 @@ public class PaymentController {
     private final PaymentTransactions payments;
     private final OutboxPublisher outbox;
     private final ProviderLedger provider;
-    public PaymentController(PaymentTransactions payments, OutboxPublisher outbox, ProviderLedger provider) {
-        this.payments = payments; this.outbox = outbox; this.provider = provider;
+    private final RefundTransactions refunds;
+    public PaymentController(PaymentTransactions payments, OutboxPublisher outbox, ProviderLedger provider, RefundTransactions refunds) {
+        this.payments = payments; this.outbox = outbox; this.provider = provider; this.refunds = refunds;
     }
     @GetMapping("/{orderId}")
     public PaymentDtos.View get(@PathVariable UUID orderId, Authentication authentication) {
@@ -28,6 +29,8 @@ public class PaymentController {
     public List<OutboxPublisher.Delivery> deliveries(@PathVariable UUID orderId) {
         payments.get(orderId, null, true); return outbox.deliveries(orderId);
     }
+    @GetMapping("/{orderId}/refund")
+    public RefundTransactions.View refund(@PathVariable UUID orderId) { return refunds.get(orderId); }
     @GetMapping("/{orderId}/provider")
     public ProviderLedger.View provider(@PathVariable UUID orderId) {
         payments.get(orderId, null, true);

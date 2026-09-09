@@ -1,10 +1,10 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–6 are implemented: architecture, infrastructure, product/cart APIs, event-sourced orders, inventory reservations, and durable simulated payments.**
+the requested thirteen phases. **Phases 1–8 are implemented, including event-sourced orders and a complete simulated checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
-authentication. Checkout APIs and shipping/compensation/order-status consumers remain pending.
+authentication. CQRS query APIs and generation-based rebuilds are implemented; checkout HTTP orchestration remains pending.
 
 ## Start the Compose stack
 
@@ -25,6 +25,8 @@ See [Phase 5: Inventory](docs/phase-5-inventory.md) for stock, reservations, rel
 optimistic concurrency and OrderCreated consumption.
 See [Phase 6: Payment](docs/phase-6-payment.md) for simulated charges, idempotency,
 UNKNOWN outcomes and durable recovery.
+See [Phase 7: Choreography](docs/phase-7-saga.md) for complete order outcomes, refunds,
+shipping, simulated notifications and isolated end-to-end tests.
 
 ## Current directory structure
 
@@ -43,6 +45,7 @@ ecommerce-platform/                 # this repository (existing folder name reta
 ├── shipping-service/
 ├── notification-service/
 ├── order-query-service/
+├── saga-tests/                      # packaged-service end-to-end verification
 ├── docker-compose.yml              # complete infrastructure and service foundations
 ├── .env.example                    # credential names; generate private .env locally
 ├── infrastructure/                 # configs, provisioning and smoke tests
@@ -61,7 +64,9 @@ Inventory now adds versioned stock, transactional reservations/inbox/outbox, an 
 consumer, administrative APIs and PostgreSQL/Kafka tests.
 Payment adds durable intents, an InventoryReserved consumer, a persisted provider simulator,
 lease-based recovery and terminal payment events through its outbox.
-The remaining service foundations gain their business implementation in later phases.
+Shipping, notification, refund/stock compensation and order status consumers now complete
+the saga; saga-tests verifies the actual packaged applications together.
+Checkout orchestration gains its business implementation in a later phase.
 
 ## Build and test
 
@@ -122,9 +127,9 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 4 | Event-sourced order, outbox and reconstruction | Implemented |
 | 5 | Inventory reservations and optimistic concurrency | Implemented |
 | 6 | Payment simulator, persisted idempotency and recovery | Implemented |
-| 7 | Choreography, shipping, notifications and compensation | Next |
-| 8 | CQRS projection and rebuild | Pending |
-| 9 | Order details composition | Pending |
+| 7 | Choreography, shipping, notifications and compensation | Implemented |
+| 8 | CQRS projection and rebuild | Implemented |
+| 9 | Order details composition | Next |
 | 10 | Resilience, retries, DLT and failure controls | Pending |
 | 11 | JWT and end-to-end tracing / business metrics | Pending |
 | 12 | Integration, API, messaging, concurrency and saga tests | Pending |
@@ -219,3 +224,26 @@ consumer caught up with the retained inventory event (offset 1 of 1, lag 0; the 
 partitions were empty). The inventory-rejected synthetic order correctly has no payment.
 Successful charges, declines and recovery were verified in isolated PostgreSQL/Kafka tests;
 no new shared-stack charge records were created by the deployment checks.
+
+## Phase 7 verification record
+
+On 2026-09-09, Java 21 `mvn clean verify` passed all 13 modules: 60 tests,
+zero failures/errors/skips. The five packaged-service saga tests exercised successful
+completion, inventory rejection, payment decline with stock release, shipment failure with
+retried refund, and lost responses during both charge and refund. They also checked event
+redelivery, one provider effect, one notification, gateway authorization and restored stock.
+Service tests verified early compensation/refund retention and order replay under reordered
+facts. Compose configuration, smoke-script syntax and whitespace checks passed.
+
+After explicit user approval, all six updated services were source-built and deployed;
+order, inventory, payment, shipping, notification and gateway are healthy. The retained
+synthetic order `4d124df9-8bee-48ec-97db-bdac907d4fdb` reached CANCELLED at version 4,
+with one simulated cancellation notification and all four order events published. Its
+inventory rejection correctly produced no payment or shipment. Routed authorization checks
+passed. Order-saga and notification consumers reached zero lag on their nonempty partitions;
+the remaining partitions were empty. Other saga branches passed in isolated integration tests.
+
+## Phase 8 verification record
+
+See [CQRS projection and rebuild](docs/phase-8-projection.md) for query APIs,
+replay guarantees and recovery limitations. Verification and shared-stack deployment are in progress.

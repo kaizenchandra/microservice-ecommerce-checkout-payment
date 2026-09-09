@@ -92,6 +92,10 @@ public class InventoryTransactions {
     /** A later compensation consumer can delegate here; missing reservations are retryable, not marked processed. */
     @Transactional
     public InventoryDtos.Reservation release(UUID orderId, UUID commandId, UUID correlationId) {
+        return releaseWithReason(orderId, commandId, correlationId, null, "ADMIN_RELEASE");
+    }
+    @Transactional
+    public InventoryDtos.Reservation releaseWithReason(UUID orderId, UUID commandId, UUID correlationId, String traceparent, String reason) {
         var rows = jdbc.queryForList("SELECT order_id FROM reservation WHERE order_id = ? FOR UPDATE", orderId);
         if (rows.isEmpty()) throw new ApiException(HttpStatus.NOT_FOUND, "RESERVATION_NOT_FOUND", "Reservation not found");
         var reservation = reservation(orderId);
@@ -101,8 +105,8 @@ public class InventoryTransactions {
         long version = reservation.version() + 1;
         jdbc.update("UPDATE reservation SET status = 'RELEASED', version = ? WHERE order_id = ?", version, orderId);
         var cause = new EventEnvelope<>(commandId, "ReleaseReservation", correlationId, commandId, "InventoryReservation", orderId,
-                version, Instant.now(), 1, null, orderId);
-        emit(orderId, version, "InventoryReleased", new InventoryEvents.Outcome(orderId, reservation.customerId(), reservation.items(), "ADMIN_RELEASE"), cause);
+                version, Instant.now(), 1, traceparent, orderId);
+        emit(orderId, version, "InventoryReleased", new InventoryEvents.Outcome(orderId, reservation.customerId(), reservation.items(), reason), cause);
         afterCommit(() -> metrics.counter("inventory.reservations.released").increment());
         return reservation(orderId);
     }

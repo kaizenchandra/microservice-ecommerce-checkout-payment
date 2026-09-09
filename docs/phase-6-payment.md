@@ -1,5 +1,8 @@
 # Phase 6 — Payment simulator, persisted idempotency and recovery
 
+The stage-specific behavior below is extended by [Phase 7](phase-7-saga.md), which now
+implements order outcomes, automatic compensation, refunds, shipping and notifications.
+
 Payment consumes `InventoryReserved`, persists a payment intent, and uses a durable
 simulated provider to obtain a charge result. Completion and decline are published through
 the payment outbox. The payment ID is the order UUID and is the stable provider idempotency

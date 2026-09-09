@@ -1,5 +1,8 @@
 # Phase 5 — Inventory reservations and optimistic concurrency
 
+The stage-specific behavior below is extended by [Phase 7](phase-7-saga.md), which now
+implements order outcomes, automatic compensation, refunds, shipping and notifications.
+
 Inventory owns stock and reservations in `inventory_db`. It consumes `OrderCreated`
 from `order.events` and emits `InventoryReserved` or `InventoryReservationFailed` through
 its transactional outbox. It also supports idempotent administrative release, emitting

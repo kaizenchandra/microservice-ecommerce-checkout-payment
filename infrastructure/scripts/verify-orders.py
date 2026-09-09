@@ -32,6 +32,9 @@ def request(method, path, identity=customer, payload=None, status=200):
     except urllib.error.HTTPError as error:
         response = error
     with response:
+        if isinstance(status, tuple):
+            assert response.status in status, f'{method} {path}: expected {status}, got {response.status}'
+            return response.status, json.loads(response.read())
         assert response.status == status, f'{method} {path}: expected {status}, got {response.status}'
         return json.loads(response.read())
 
@@ -54,19 +57,27 @@ path = '/api/orders/' + order_id
 request('GET', path, other, status=404)
 request('GET', path + '/events', customer, status=403)
 view = request('GET', path)
-assert view['status'] == 'PENDING' and float(view['total']['amount']) == 25
+assert view['status'] in {'PENDING', 'COMPENSATING', 'COMPLETED', 'CANCELLED'} and float(view['total']['amount']) == 25
 assert 'paymentToken' not in view
-note = {'expectedVersion': 1, 'note': 'Synthetic Phase 4 verification'}
-assert request('POST', path + '/notes', payload=note)['version'] == 2
+# Saga facts can append concurrently, so refresh the expected version on a 409.
+for attempt in range(5):
+    view = request('GET', path)
+    note = {'expectedVersion': view['version'], 'note': 'Synthetic Phase 4 verification'}
+    code, added = request('POST', path + '/notes', payload=note, status=(200, 409))
+    if code == 200:
+        assert added['version'] == note['expectedVersion'] + 1
+        break
+else:
+    raise AssertionError('Could not append note after five version conflicts')
 request('POST', path + '/notes', payload=note, status=409)
-history = request('GET', path + '/events', admin)
-assert [event['eventType'] for event in history] == ['OrderCreated', 'OrderNoteAdded']
-assert [event['aggregateVersion'] for event in history] == [1, 2]
 deadline = time.monotonic() + 90
 while True:
+    history = request('GET', path + '/events', admin)
+    types = [event['eventType'] for event in history]
+    assert types[0] == 'OrderCreated' and types.count('OrderNoteAdded') == 1
+    assert [event['aggregateVersion'] for event in history] == list(range(1, len(history) + 1))
     rows = request('GET', path + '/outbox', admin)
-    assert [row['eventId'] for row in rows] == [event['eventId'] for event in history]
-    if len(rows) == 2 and all(row['status'] == 'PUBLISHED' for row in rows):
+    if [row['eventId'] for row in rows] == [event['eventId'] for event in history] and all(row['status'] == 'PUBLISHED' for row in rows):
         break
     assert time.monotonic() < deadline, 'Outbox did not publish within 90 seconds'
     time.sleep(1)

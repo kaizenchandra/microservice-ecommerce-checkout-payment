@@ -1,17 +1,16 @@
 package com.synechisveltiosi.orderqueryservice;
-
+import com.synechisveltiosi.orderqueryservice.domain.QueryEvents;
+import com.synechisveltiosi.platform.contracts.Money;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.SpringApplication;
-import org.springframework.context.ConfigurableApplicationContext;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
+import java.math.BigDecimal;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
 class OrderQueryServiceApplicationTest {
-    @Test
-    void applicationStarts() {
-        try (ConfigurableApplicationContext context = SpringApplication.run(OrderQueryServiceApplication.class,
-                "--spring.main.web-application-type=none")) {
-            assertNotNull(context.getBean(OrderQueryServiceApplication.class));
-        }
+    @Test void validatesReadModelSnapshotAndDefaultsOldSalesChannel() {
+        var line = new QueryEvents.Line(UUID.randomUUID(), "SKU-1", "Demo", 2, new Money(new BigDecimal("12.50"), Currency.getInstance("USD")));
+        var address = new QueryEvents.Address("Demo", "Street", "City", "12345", "US");
+        var total = new Money(new BigDecimal("25"), Currency.getInstance("USD"));
+        assertEquals("WEB", new QueryEvents.Created(UUID.randomUUID(), UUID.randomUUID(), List.of(line), total, address, null).salesChannel());
+        assertThrows(IllegalArgumentException.class, () -> new QueryEvents.Created(UUID.randomUUID(), UUID.randomUUID(), List.of(line), line.unitPrice(), address, null));
     }
 }
