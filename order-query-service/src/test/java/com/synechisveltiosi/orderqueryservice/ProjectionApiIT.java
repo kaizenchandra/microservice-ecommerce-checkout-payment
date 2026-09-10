@@ -7,7 +7,6 @@ import org.junit.jupiter.api.*;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -142,7 +141,8 @@ class ProjectionApiIT {
         assertThrows(RuntimeException.class, () -> codec.sanitize("order.events", id.toString(), codec.encode(created).replace("\"schemaVersion\":1", "\"schemaVersion\":1.5")));
         accept(created); assertEquals(1, queries.get(id, CUSTOMER, false).orderVersion());
     }
-    @Test @SuppressWarnings("unchecked") void realKafkaConsumerProjectsAndRestartResumesIncompleteRebuild() throws Exception {
+    @Test void realKafkaConsumerProjectsAndRestartResumesIncompleteRebuild() throws Exception {
+        var id = UUID.randomUUID(); var event = created(id, CUSTOMER);
         // Query has no business producer; the test supplies a serializer explicitly for this fixture.
         var props = new Properties(); props.put("bootstrap.servers", KAFKA.getBootstrapServers());
         try (var producer = new org.apache.kafka.clients.producer.KafkaProducer<String, String>(props,

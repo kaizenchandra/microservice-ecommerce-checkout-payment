@@ -44,4 +44,4 @@ ownership, rollback, token removal, live ingestion during rebuild, failed builds
 restart recovery. The packaged-service saga suite additionally checks successful and
 refunded orders and rebuild equality through the gateway against real producer events.
 
-Deployment to the shared Compose stack is pending completion of verification.
+Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures, errors or skips. Compose configuration and whitespace checks passed. The query service and gateway were rebuilt and deployed healthy. A read-only gateway check verified the retained synthetic order as CANCELLED at version 4, inventory REJECTED and notified. The journal contained six events, one visible order and zero buffered events. Rebuild execution was verified in isolated integration tests.

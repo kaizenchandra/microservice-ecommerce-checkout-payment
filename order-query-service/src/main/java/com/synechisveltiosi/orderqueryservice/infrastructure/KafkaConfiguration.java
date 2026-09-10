@@ -12,7 +12,7 @@ public class KafkaConfiguration {
     @Bean
     DefaultErrorHandler projectionErrorHandler() {
         var handler = new DefaultErrorHandler((record, exception) -> {
-            throw new IllegalStateException("Inventory event requires operator recovery");
+            throw new IllegalStateException("Projection event requires operator recovery");
         }, new FixedBackOff(1000L, FixedBackOff.UNLIMITED_ATTEMPTS));
         handler.setClassifications(Map.of(Exception.class, true), true);
         return handler;

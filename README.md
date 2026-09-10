@@ -246,4 +246,4 @@ the remaining partitions were empty. Other saga branches passed in isolated inte
 ## Phase 8 verification record
 
 See [CQRS projection and rebuild](docs/phase-8-projection.md) for query APIs,
-replay guarantees and recovery limitations. Verification and shared-stack deployment are in progress.
+replay guarantees and recovery limitations. Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures, errors or skips. Compose configuration and whitespace checks passed. The query service and gateway were rebuilt and deployed healthy. A read-only gateway check verified the retained synthetic order as CANCELLED at version 4, inventory REJECTED and notified. The journal contained six events, one visible order and zero buffered events. Rebuild execution was verified in isolated integration tests.
