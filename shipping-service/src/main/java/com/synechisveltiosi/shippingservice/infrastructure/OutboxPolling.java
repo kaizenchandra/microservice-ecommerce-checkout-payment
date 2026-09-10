@@ -25,8 +25,12 @@ public class OutboxPolling {
 
     public OutboxPolling(OutboxPublisher publisher, JdbcTemplate jdbc, MeterRegistry metrics,
                          @Value("${outbox.batch-size:10}") int batchSize) {
-        if (batchSize < 1 || batchSize > 100) { throw new IllegalArgumentException("Outbox batch size must be 1–100"); }
-        this.publisher = publisher; this.jdbc = jdbc; this.batchSize = batchSize;
+        if (batchSize < 1 || batchSize > 100) {
+            throw new IllegalArgumentException("Outbox batch size must be 1–100");
+        }
+        this.publisher = publisher;
+        this.jdbc = jdbc;
+        this.batchSize = batchSize;
         metrics.gauge("outbox.pending", pending);
         metrics.gauge("outbox.oldest.seconds", oldestSeconds);
     }
@@ -35,7 +39,9 @@ public class OutboxPolling {
     public void poll() {
         try {
             for (int i = 0; i < batchSize; i++) {
-                if (!publisher.publishOne()) { break; }
+                if (!publisher.publishOne()) {
+                    break;
+                }
             }
             var state = jdbc.queryForMap("""
                     SELECT count(*) AS pending,

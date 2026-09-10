@@ -4,7 +4,9 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Transport metadata only: payload types and event names belong to their producing service. */
+/**
+ * Transport metadata only: payload types and event names belong to their producing service.
+ */
 public record EventEnvelope<T>(
         UUID eventId,
         String eventType,

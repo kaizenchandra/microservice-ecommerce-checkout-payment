@@ -90,11 +90,11 @@ BASE_URL="http://localhost:${GATEWAY_PORT:-8080}"
 
 The demo uses stateless HTTP Basic for curl clients with environment-supplied passwords:
 
-| Username | Password variable | Role |
-|---|---|---|
-| `11111111-1111-1111-1111-111111111111` | `DEMO_CUSTOMER_PASSWORD` | CUSTOMER |
+| Username                               | Password variable               | Role     |
+|----------------------------------------|---------------------------------|----------|
+| `11111111-1111-1111-1111-111111111111` | `DEMO_CUSTOMER_PASSWORD`        | CUSTOMER |
 | `22222222-2222-2222-2222-222222222222` | `DEMO_SECOND_CUSTOMER_PASSWORD` | CUSTOMER |
-| `admin` | `DEMO_ADMIN_PASSWORD` | ADMIN |
+| `admin`                                | `DEMO_ADMIN_PASSWORD`           | ADMIN    |
 
 Each service verifies credentials; cart ownership is derived from the authenticated
 principal. Customers cannot set another customer's identity in a request. Cart queries
@@ -115,12 +115,12 @@ traffic. Never use these plaintext demo credentials as production credentials.
 Compose activates the `demo` profile for product-service only. Flyway creates the
 schema and inserts these products once:
 
-| Product | UUID | USD |
-|---|---|---:|
-| Laptop | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1 | 1299.00 |
-| Keyboard | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2 | 79.90 |
-| Monitor | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3 | 299.00 |
-| Headphones | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4 | 149.50 |
+| Product    | UUID                                 |     USD |
+|------------|--------------------------------------|--------:|
+| Laptop     | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1 | 1299.00 |
+| Keyboard   | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2 |   79.90 |
+| Monitor    | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3 |  299.00 |
+| Headphones | aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4 |  149.50 |
 
 ```bash
 curl --fail -u "$CUSTOMER_ID:$DEMO_CUSTOMER_PASSWORD" \
@@ -198,18 +198,18 @@ explicit calculation rounding remains HALF_EVEN. No currency conversion is perfo
 
 ## Failure and concurrency demonstrations
 
-| Trigger | Result | Persisted effect |
-|---|---|---|
-| Missing/invalid credentials | 401 Problem Details | none |
-| Customer creates/updates a product | 403 | none |
-| Another customer accesses a cart | 404 | none |
-| Invalid DTO, UUID or quantity | 400 Problem Details | none |
-| Duplicate SKU | 409 | original product retained |
-| Stale `expectedVersion` | 409 | current state retained |
-| Missing product | 404 | cart unchanged |
-| Inactive product | 409 | cart unchanged |
-| Catalog fails or exceeds read timeout | 503 | cart unchanged |
-| Simultaneous same-version cart updates | one commits, one conflicts | no lost update |
+| Trigger                                | Result                     | Persisted effect          |
+|----------------------------------------|----------------------------|---------------------------|
+| Missing/invalid credentials            | 401 Problem Details        | none                      |
+| Customer creates/updates a product     | 403                        | none                      |
+| Another customer accesses a cart       | 404                        | none                      |
+| Invalid DTO, UUID or quantity          | 400 Problem Details        | none                      |
+| Duplicate SKU                          | 409                        | original product retained |
+| Stale `expectedVersion`                | 409                        | current state retained    |
+| Missing product                        | 404                        | cart unchanged            |
+| Inactive product                       | 409                        | cart unchanged            |
+| Catalog fails or exceeds read timeout  | 503                        | cart unchanged            |
+| Simultaneous same-version cart updates | one commits, one conflicts | no lost update            |
 
 To observe an actual dependency outage and automatic cleanup of the experiment:
 

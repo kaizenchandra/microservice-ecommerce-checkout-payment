@@ -71,3 +71,11 @@ outbox:
   enabled: ${OUTBOX_ENABLED:true}
   poll-delay-ms: 1000
   batch-size: 10
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:checkout-demo}
+    audience: ${JWT_AUDIENCE:ecommerce-api}
+telemetry:
+  export-enabled: ${TELEMETRY_EXPORT_ENABLED:true}
+  endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}

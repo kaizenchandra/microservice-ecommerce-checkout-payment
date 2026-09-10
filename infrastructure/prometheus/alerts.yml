@@ -4,7 +4,7 @@ groups:
       - alert: ApplicationUnavailable
         expr: up{job="applications"} == 0
         for: 2m
-        labels: {severity: warning}
+        labels: { severity: warning }
         annotations:
           summary: 'Application {{ $labels.service }} cannot be scraped'
           description: 'Inspect application readiness and container logs. Infrastructure-only mode intentionally leaves these targets down.'

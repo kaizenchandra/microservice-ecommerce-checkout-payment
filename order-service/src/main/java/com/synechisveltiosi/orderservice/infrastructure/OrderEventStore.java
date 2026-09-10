@@ -16,12 +16,18 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** JDBC makes append-only SQL and expected-version compare-and-swap explicit. */
+/**
+ * JDBC makes append-only SQL and expected-version compare-and-swap explicit.
+ */
 @Repository
 public class OrderEventStore {
     private final JdbcTemplate jdbc;
     private final EventCodec codec;
-    public OrderEventStore(JdbcTemplate jdbc, EventCodec codec) { this.jdbc = jdbc; this.codec = codec; }
+
+    public OrderEventStore(JdbcTemplate jdbc, EventCodec codec) {
+        this.jdbc = jdbc;
+        this.codec = codec;
+    }
 
     @Transactional(propagation = Propagation.MANDATORY)
     public void createStream(UUID id) {
@@ -32,9 +38,11 @@ public class OrderEventStore {
     public EventEnvelope<OrderEvents.Event> append(UUID id, long expectedVersion, OrderEvents.Event event, CommandMetadata metadata) {
         int changed = jdbc.update("UPDATE order_stream SET current_version = current_version + 1 WHERE aggregate_id = ? AND current_version = ?",
                 id, expectedVersion);
-        if (changed != 1) { throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "Order changed; reload before updating"); }
+        if (changed != 1) {
+            throw new ApiException(HttpStatus.CONFLICT, "STALE_VERSION", "Order changed; reload before updating");
+        }
         var envelope = new EventEnvelope<OrderEvents.Event>(UUID.randomUUID(), codec.type(event), metadata.correlationId(),
-                metadata.causationId(), "Order", id, expectedVersion + 1, Instant.now(), 1, metadata.traceparent(), event);
+                metadata.causationId(), "Order", id, expectedVersion + 1, Instant.now(), 1, com.synechisveltiosi.orderservice.infrastructure.Telemetry.currentTraceparentOr(metadata.traceparent()), event);
         String json = codec.encode(envelope);
         jdbc.update("""
                 INSERT INTO domain_event(event_id, aggregate_id, aggregate_type, aggregate_version, event_type, schema_version, payload, occurred_at)
@@ -54,7 +62,9 @@ public class OrderEventStore {
 
     public OrderAggregate load(UUID id) {
         var events = history(id);
-        if (events.isEmpty()) { throw new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "Order not found"); }
+        if (events.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ORDER_NOT_FOUND", "Order not found");
+        }
         return OrderAggregate.replay(id, events);
     }
 }

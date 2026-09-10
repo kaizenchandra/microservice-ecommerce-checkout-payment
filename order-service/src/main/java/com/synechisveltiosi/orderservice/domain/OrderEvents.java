@@ -4,16 +4,24 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.synechisveltiosi.platform.contracts.Money;
 
 import java.math.BigDecimal;
-import java.util.Currency;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public final class OrderEvents {
-    private OrderEvents() { }
-    public sealed interface Event permits OrderCreated, OrderNoteAdded, OrderFactRecorded, OrderCompleted, OrderCancelled { }
+    private OrderEvents() {
+    }
+
+    public static Money total(List<Line> items) {
+        return items.stream().map(line -> line.unitPrice().multiply(line.quantity()))
+                .reduce(new Money(BigDecimal.ZERO, Currency.getInstance("USD")), Money::add);
+    }
+
+    public enum Fact {
+        InventoryReserved, InventoryReservationFailed, InventoryReleased,
+        PaymentCompleted, PaymentFailed, PaymentRefunded, ShipmentCreated, ShipmentFailed
+    }
+
+    public sealed interface Event permits OrderCreated, OrderNoteAdded, OrderFactRecorded, OrderCompleted, OrderCancelled {
+    }
 
     public record Line(UUID productId, String sku, String name, int quantity, Money unitPrice) {
         public Line {
@@ -34,7 +42,10 @@ public final class OrderEvents {
                 throw new IllegalArgumentException("Invalid shipping address");
             }
         }
-        private static boolean text(String value, int max) { return value != null && !value.isBlank() && value.length() <= max; }
+
+        private static boolean text(String value, int max) {
+            return value != null && !value.isBlank() && value.length() <= max;
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -52,16 +63,22 @@ public final class OrderEvents {
             items = List.copyOf(items);
             Set<UUID> products = new HashSet<>();
             for (Line line : items) {
-                if (!products.add(line.productId())) { throw new IllegalArgumentException("Duplicate order product"); }
+                if (!products.add(line.productId())) {
+                    throw new IllegalArgumentException("Duplicate order product");
+                }
             }
             Money calculated = OrderEvents.total(items);
-            if (!calculated.equals(total)) { throw new IllegalArgumentException("Order total does not match its lines"); }
+            if (!calculated.equals(total)) {
+                throw new IllegalArgumentException("Order total does not match its lines");
+            }
             if (!Set.of("tok_success", "tok_declined", "tok_timeout", "tok_error").contains(paymentToken)) {
                 throw new IllegalArgumentException("Only fake demo payment tokens are accepted");
             }
             // Backward-compatible schema-1 evolution: older events have no salesChannel.
             salesChannel = salesChannel == null ? "WEB" : salesChannel;
-            if (!Set.of("WEB", "MOBILE").contains(salesChannel)) { throw new IllegalArgumentException("Invalid sales channel"); }
+            if (!Set.of("WEB", "MOBILE").contains(salesChannel)) {
+                throw new IllegalArgumentException("Invalid sales channel");
+            }
         }
     }
 
@@ -69,20 +86,21 @@ public final class OrderEvents {
     public record OrderNoteAdded(UUID customerId, String note) implements Event {
         public OrderNoteAdded {
             Objects.requireNonNull(customerId);
-            if (note == null || note.isBlank() || note.length() > 500) { throw new IllegalArgumentException("Invalid order note"); }
+            if (note == null || note.isBlank() || note.length() > 500) {
+                throw new IllegalArgumentException("Invalid order note");
+            }
         }
     }
 
-    public enum Fact { InventoryReserved, InventoryReservationFailed, InventoryReleased,
-        PaymentCompleted, PaymentFailed, PaymentRefunded, ShipmentCreated, ShipmentFailed }
     public record OrderFactRecorded(Fact fact) implements Event {
-        public OrderFactRecorded { Objects.requireNonNull(fact); }
+        public OrderFactRecorded {
+            Objects.requireNonNull(fact);
+        }
     }
-    public record OrderCompleted(UUID orderId, UUID customerId) implements Event { }
-    public record OrderCancelled(UUID orderId, UUID customerId) implements Event { }
 
-    public static Money total(List<Line> items) {
-        return items.stream().map(line -> line.unitPrice().multiply(line.quantity()))
-                .reduce(new Money(BigDecimal.ZERO, Currency.getInstance("USD")), Money::add);
+    public record OrderCompleted(UUID orderId, UUID customerId) implements Event {
+    }
+
+    public record OrderCancelled(UUID orderId, UUID customerId) implements Event {
     }
 }

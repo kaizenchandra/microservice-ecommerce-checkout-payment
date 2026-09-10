@@ -25,12 +25,18 @@ public class OutboxPublisher {
     private final KafkaTemplate<String, String> kafka;
     private final tools.jackson.databind.json.JsonMapper codec;
     private final MeterRegistry metrics;
+    private final Telemetry telemetry;
 
-    public OutboxPublisher(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka, tools.jackson.databind.json.JsonMapper codec, MeterRegistry metrics) {
-        this.jdbc = jdbc; this.kafka = kafka; this.codec = codec; this.metrics = metrics;
+    public OutboxPublisher(JdbcTemplate jdbc, KafkaTemplate<String, String> kafka, tools.jackson.databind.json.JsonMapper codec, MeterRegistry metrics, Telemetry telemetry) {
+        this.jdbc = jdbc;
+        this.kafka = kafka;
+        this.codec = codec;
+        this.metrics = metrics; this.telemetry = telemetry;
     }
 
-    /** One bounded transaction per event, not one transaction for the whole batch. */
+    /**
+     * One bounded transaction per event, not one transaction for the whole batch.
+     */
     @Transactional(timeout = 10)
     public boolean publishOne() {
         var candidates = jdbc.query("""
@@ -45,20 +51,27 @@ public class OutboxPublisher {
                 LIMIT 1 FOR UPDATE OF o SKIP LOCKED
                 """, (row, index) -> new Pending(row.getObject("id", UUID.class), row.getObject("aggregate_id", UUID.class),
                 row.getLong("aggregate_version"), row.getString("event_type"), row.getString("topic"), row.getString("payload"), row.getInt("attempts")));
-        if (candidates.isEmpty()) { return false; }
+        if (candidates.isEmpty()) {
+            return false;
+        }
         Pending row = candidates.getFirst();
         var event = codec.readValue(row.payload(), PublicationMetadata.class);
         var record = new ProducerRecord<String, String>(row.topic(), row.orderId().toString(), row.payload());
         record.headers().add("correlationId", event.correlationId().toString().getBytes(StandardCharsets.UTF_8));
         record.headers().add("causationId", event.causationId().toString().getBytes(StandardCharsets.UTF_8));
         record.headers().add("eventId", row.id().toString().getBytes(StandardCharsets.UTF_8));
-        if (event.traceparent() != null) { record.headers().add("traceparent", event.traceparent().getBytes(StandardCharsets.UTF_8)); }
+        if (event.traceparent() != null) {
+            record.headers().add("traceparent", event.traceparent().getBytes(StandardCharsets.UTF_8));
+        }
         try (var correlation = MDC.putCloseable("correlationId", event.correlationId().toString());
              var order = MDC.putCloseable("orderId", row.orderId().toString());
              var eventId = MDC.putCloseable("eventId", row.id().toString());
              var type = MDC.putCloseable("eventType", row.type())) {
-            try {
-                kafka.send(record).get(5, TimeUnit.SECONDS);
+            try (var trace = telemetry.start("kafka.publish", io.opentelemetry.api.trace.SpanKind.PRODUCER, event.traceparent())) {
+                record.headers().remove("traceparent");
+                record.headers().add("traceparent", Telemetry.currentTraceparentOr(event.traceparent()).getBytes(StandardCharsets.UTF_8));
+                try { kafka.send(record).get(5, TimeUnit.SECONDS); }
+                catch (Exception error) { trace.failed(); throw error; }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Outbox publisher interrupted", interrupted);
@@ -90,9 +103,14 @@ public class OutboxPublisher {
     }
 
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
-    private record PublicationMetadata(UUID correlationId, UUID causationId, String traceparent) { }
+    private record PublicationMetadata(UUID correlationId, UUID causationId, String traceparent) {
+    }
 
-    private record Pending(UUID id, UUID orderId, long version, String type, String topic, String payload, int attempts) { }
+    private record Pending(UUID id, UUID orderId, long version, String type, String topic, String payload,
+                           int attempts) {
+    }
+
     public record Delivery(UUID eventId, long aggregateVersion, String eventType, String status, int attempts,
-                           Instant nextAttemptAt, Instant publishedAt) { }
+                           Instant nextAttemptAt, Instant publishedAt) {
+    }
 }

@@ -6,13 +6,16 @@ import com.synechisveltiosi.cartservice.infrastructure.CartRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.util.UUID;
 
 @Service
 public class CartTransactions {
-    public enum Mutation { ADD, SET, REMOVE }
     private final CartRepository carts;
-    public CartTransactions(CartRepository carts) { this.carts = carts; }
+
+    public CartTransactions(CartRepository carts) {
+        this.carts = carts;
+    }
 
     @Transactional
     public CartDtos.View create(UUID customer) {
@@ -20,7 +23,9 @@ public class CartTransactions {
     }
 
     @Transactional(readOnly = true)
-    public CartDtos.View get(UUID id, UUID customer) { return CartDtos.View.from(find(id, customer)); }
+    public CartDtos.View get(UUID id, UUID customer) {
+        return CartDtos.View.from(find(id, customer));
+    }
 
     @Transactional
     public CartDtos.View change(UUID id, UUID customer, UUID product, int quantity, long expectedVersion, Mutation mutation) {
@@ -45,4 +50,6 @@ public class CartTransactions {
         return carts.findByIdAndCustomerId(id, customer)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "CART_NOT_FOUND", "Cart not found"));
     }
+
+    public enum Mutation {ADD, SET, REMOVE}
 }

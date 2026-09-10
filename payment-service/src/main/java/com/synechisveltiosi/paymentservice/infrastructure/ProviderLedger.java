@@ -8,15 +8,32 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
-import java.util.*;
 
-/** Models the simulator's independent commit boundary. No application payment row is accessed here. */
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Models the simulator's independent commit boundary. No application payment row is accessed here.
+ */
 @Service
 public class ProviderLedger {
     private final JdbcTemplate jdbc;
     private final JsonMapper json;
-    public ProviderLedger(JdbcTemplate jdbc, JsonMapper json) { this.jdbc = jdbc; this.json = json; }
-    public record Attempt(ChargeResult result, boolean responseLost, boolean unavailable) { }
+
+    public ProviderLedger(JdbcTemplate jdbc, JsonMapper json) {
+        this.jdbc = jdbc;
+        this.json = json;
+    }
+
+    private static void verify(Map<String, Object> row, String hash) {
+        if (!hash.equals(row.get("request_hash")))
+            throw new IllegalArgumentException("Provider key reused for different instructions");
+    }
+
+    private static ChargeResult result(Map<String, Object> row) {
+        return new ChargeResult((String) row.get("outcome"), (UUID) row.get("provider_reference"));
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = 5)
     public Attempt attempt(PaymentProvider.Request request) {
@@ -34,21 +51,25 @@ public class ProviderLedger {
                 result.status(), result.providerReference(), declined ? 0 : 1, request.paymentId());
         return new Attempt(result, request.paymentToken().equals("tok_timeout"), false);
     }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW, readOnly = true)
     public Optional<ChargeResult> lookup(PaymentProvider.Request request) {
         var rows = jdbc.queryForList("SELECT * FROM provider_charge WHERE payment_id = ?", request.paymentId());
         if (rows.isEmpty()) return Optional.empty();
-        var row = rows.getFirst(); verify(row, PaymentTransactions.hash(json.writeValueAsString(request)));
+        var row = rows.getFirst();
+        verify(row, PaymentTransactions.hash(json.writeValueAsString(request)));
         return row.get("outcome") == null ? Optional.empty() : Optional.of(result(row));
     }
-    public record View(UUID paymentId, String outcome, UUID providerReference, int requests, int chargeCount) { }
+
     public Optional<View> view(UUID id) {
         return jdbc.query("SELECT outcome, provider_reference, requests, charge_count FROM provider_charge WHERE payment_id = ?",
-                (row, index) -> new View(id, row.getString("outcome"), row.getObject("provider_reference", UUID.class), row.getInt("requests"), row.getInt("charge_count")), id)
+                        (row, index) -> new View(id, row.getString("outcome"), row.getObject("provider_reference", UUID.class), row.getInt("requests"), row.getInt("charge_count")), id)
                 .stream().findFirst();
     }
-    private static void verify(Map<String, Object> row, String hash) {
-        if (!hash.equals(row.get("request_hash"))) throw new IllegalArgumentException("Provider key reused for different instructions");
+
+    public record Attempt(ChargeResult result, boolean responseLost, boolean unavailable) {
     }
-    private static ChargeResult result(Map<String, Object> row) { return new ChargeResult((String) row.get("outcome"), (UUID) row.get("provider_reference")); }
+
+    public record View(UUID paymentId, String outcome, UUID providerReference, int requests, int chargeCount) {
+    }
 }

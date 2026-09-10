@@ -39,6 +39,8 @@ public class ProductCatalogClient {
         CatalogProduct product;
         try {
             product = breaker.executeSupplier(() -> client.get().uri("/api/products/{id}", id).header("Authorization", authorization)
+                    .headers(headers -> { String trace = Telemetry.currentTraceparentOr(null); if (trace != null) headers.set("traceparent", trace);
+                        String correlation = org.slf4j.MDC.get("correlationId"); if (correlation != null) headers.set("X-Correlation-ID", correlation); })
                     .retrieve().body(CatalogProduct.class));
         } catch (RestClientResponseException error) {
             if (error.getStatusCode().value() == 404) {

@@ -12,9 +12,18 @@ import java.util.UUID;
 @Component
 public class EventCodec {
     private final JsonMapper mapper;
-    public EventCodec(JsonMapper mapper) { this.mapper = mapper; }
-    public String encode(Object value) { return mapper.writeValueAsString(value); }
-    public <T> T read(String json, Class<T> type) { return mapper.readValue(json, type); }
+
+    public EventCodec(JsonMapper mapper) {
+        this.mapper = mapper;
+    }
+
+    public String encode(Object value) {
+        return mapper.writeValueAsString(value);
+    }
+
+    public <T> T read(String json, Class<T> type) {
+        return mapper.readValue(json, type);
+    }
 
     public String type(OrderEvents.Event event) {
         return switch (event) {

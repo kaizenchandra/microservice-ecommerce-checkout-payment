@@ -77,3 +77,11 @@ details:
   shipping-url: ${SHIPPING_SERVICE_URL:http://localhost:8087}
   timeout-ms: ${DETAILS_TIMEOUT_MS:1000}
   max-concurrent-lookups: ${DETAILS_MAX_CONCURRENT_LOOKUPS:24}
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:checkout-demo}
+    audience: ${JWT_AUDIENCE:ecommerce-api}
+telemetry:
+  export-enabled: ${TELEMETRY_EXPORT_ENABLED:true}
+  endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}

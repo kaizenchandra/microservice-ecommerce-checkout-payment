@@ -48,3 +48,11 @@ demo:
     customer-password: ${DEMO_CUSTOMER_PASSWORD}
     second-customer-password: ${DEMO_SECOND_CUSTOMER_PASSWORD}
     admin-password: ${DEMO_ADMIN_PASSWORD}
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:checkout-demo}
+    audience: ${JWT_AUDIENCE:ecommerce-api}
+telemetry:
+  export-enabled: ${TELEMETRY_EXPORT_ENABLED:true}
+  endpoint: ${MANAGEMENT_OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}

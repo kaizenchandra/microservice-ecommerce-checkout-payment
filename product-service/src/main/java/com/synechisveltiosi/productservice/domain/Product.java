@@ -1,11 +1,7 @@
 package com.synechisveltiosi.productservice.domain;
 
 import com.synechisveltiosi.platform.contracts.Money;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
+import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -36,7 +32,8 @@ public class Product {
     @Column(nullable = false)
     private Instant updatedAt;
 
-    protected Product() { }
+    protected Product() {
+    }
 
     public Product(String sku, String name, String description, Money price) {
         if (sku == null || !sku.matches("[A-Z0-9][A-Z0-9-]{1,39}")) {
@@ -64,13 +61,39 @@ public class Product {
         this.updatedAt = Instant.now();
     }
 
-    public UUID id() { return id; }
-    public String sku() { return sku; }
-    public String name() { return name; }
-    public String description() { return description; }
-    public Money price() { return new Money(amount, Currency.getInstance(currency)); }
-    public boolean active() { return active; }
-    public long version() { return version; }
-    public Instant createdAt() { return createdAt; }
-    public Instant updatedAt() { return updatedAt; }
+    public UUID id() {
+        return id;
+    }
+
+    public String sku() {
+        return sku;
+    }
+
+    public String name() {
+        return name;
+    }
+
+    public String description() {
+        return description;
+    }
+
+    public Money price() {
+        return new Money(amount, Currency.getInstance(currency));
+    }
+
+    public boolean active() {
+        return active;
+    }
+
+    public long version() {
+        return version;
+    }
+
+    public Instant createdAt() {
+        return createdAt;
+    }
+
+    public Instant updatedAt() {
+        return updatedAt;
+    }
 }

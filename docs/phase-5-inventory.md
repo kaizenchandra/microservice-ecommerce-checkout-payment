@@ -54,11 +54,11 @@ are the order UUID. Reservation outcomes start at version 1; release is version 
 Correlation and causation link the outgoing event to the incoming OrderCreated, with
 traceparent forwarded. These versions belong to Inventory, independent of Order versions.
 
-| Event | Payload |
-|---|---|
-| InventoryReserved | orderId, customerId, product/quantity items, total, fake paymentToken, synthetic shippingAddress |
-| InventoryReservationFailed | orderId, customerId, items, reason (`STOCK_NOT_FOUND` or `INSUFFICIENT_STOCK`) |
-| InventoryReleased | orderId, customerId, items, reason (`ADMIN_RELEASE` for the current API) |
+| Event                      | Payload                                                                                          |
+|----------------------------|--------------------------------------------------------------------------------------------------|
+| InventoryReserved          | orderId, customerId, product/quantity items, total, fake paymentToken, synthetic shippingAddress |
+| InventoryReservationFailed | orderId, customerId, items, reason (`STOCK_NOT_FOUND` or `INSUFFICIENT_STOCK`)                   |
+| InventoryReleased          | orderId, customerId, items, reason (`ADMIN_RELEASE` for the current API)                         |
 
 The reserved event carries the trusted order total and fake token for the future payment
 consumer and synthetic address for downstream shipment events. Inventory does not reprice
@@ -105,14 +105,14 @@ for these seed rows. Inventory readiness includes its database.
 All `/api/inventory/**` endpoints require ADMIN under the existing local Basic-auth
 adapter. Customers receive 403; JWT and service identity are introduced in Phase 11.
 
-| Method and path | Purpose |
-|---|---|
-| POST /api/inventory/stock | Create stock with `{productId, onHand}`; 201 or duplicate 409 |
-| GET /api/inventory/stock/{productId} | Read onHand, reserved, available and version |
-| PUT /api/inventory/stock/{productId} | Set `{onHand, expectedVersion}`; stale version 409 |
-| GET /api/inventory/reservations/{orderId} | Inspect durable RESERVED, REJECTED or RELEASED state |
-| POST /api/inventory/reservations/{orderId}/release | Release with UUID `Idempotency-Key` header |
-| GET /api/inventory/reservations/{orderId}/outbox | Inspect outgoing events and publication status |
+| Method and path                                    | Purpose                                                       |
+|----------------------------------------------------|---------------------------------------------------------------|
+| POST /api/inventory/stock                          | Create stock with `{productId, onHand}`; 201 or duplicate 409 |
+| GET /api/inventory/stock/{productId}               | Read onHand, reserved, available and version                  |
+| PUT /api/inventory/stock/{productId}               | Set `{onHand, expectedVersion}`; stale version 409            |
+| GET /api/inventory/reservations/{orderId}          | Inspect durable RESERVED, REJECTED or RELEASED state          |
+| POST /api/inventory/reservations/{orderId}/release | Release with UUID `Idempotency-Key` header                    |
+| GET /api/inventory/reservations/{orderId}/outbox   | Inspect outgoing events and publication status                |
 
 Use the [Phase 4 order creation example](phase-4-order-outbox.md) with one of the seeded
 product UUIDs, then poll the reservation endpoint with its ORDER_ID. It may initially

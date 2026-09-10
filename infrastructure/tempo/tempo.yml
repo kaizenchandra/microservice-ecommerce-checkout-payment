@@ -4,8 +4,8 @@ distributor:
   receivers:
     otlp:
       protocols:
-        grpc: {endpoint: "0.0.0.0:4317"}
-        http: {endpoint: "0.0.0.0:4318"}
+        grpc: { endpoint: "0.0.0.0:4317" }
+        http: { endpoint: "0.0.0.0:4318" }
 ingester:
   max_block_duration: 5m
 compactor:
@@ -14,5 +14,5 @@ compactor:
 storage:
   trace:
     backend: local
-    wal: {path: /var/tempo/wal}
-    local: {path: /var/tempo/blocks}
+    wal: { path: /var/tempo/wal }
+    local: { path: /var/tempo/blocks }

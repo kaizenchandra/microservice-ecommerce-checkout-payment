@@ -64,6 +64,7 @@ trusted because of that role restriction; customers cannot choose their own pric
 The future checkout implementation must fetch authoritative catalog prices. These demo
 commands deliberately accept synthetic snapshots without live catalog/cart calls.
 Customers can read and annotate only their own orders; another customer's ID returns
+
 404. Event history and delivery diagnostics require ADMIN. JWT arrives in Phase 11.
 
 ## Persistence and reconstruction

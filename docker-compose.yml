@@ -9,6 +9,7 @@ x-runtime: &runtime
       max-file: "3"
 
 x-app-env: &app-env
+  JWT_SECRET: ${JWT_SECRET:?Run the environment initializer}
   SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
   SPRING_DATA_REDIS_HOST: redis
   SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?Run the environment initializer}

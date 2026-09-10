@@ -1,31 +1,31 @@
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
-rule_files: [/etc/prometheus/alerts.yml]
+rule_files: [ /etc/prometheus/alerts.yml ]
 scrape_configs:
   - job_name: prometheus
     static_configs:
-      - targets: [localhost:9090]
+      - targets: [ localhost:9090 ]
   - job_name: applications
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: [api-gateway:8080]
-        labels: {service: api-gateway}
-      - targets: [product-service:8081]
-        labels: {service: product-service}
-      - targets: [cart-service:8082]
-        labels: {service: cart-service}
-      - targets: [checkout-service:8083]
-        labels: {service: checkout-service}
-      - targets: [order-service:8084]
-        labels: {service: order-service}
-      - targets: [inventory-service:8085]
-        labels: {service: inventory-service}
-      - targets: [payment-service:8086]
-        labels: {service: payment-service}
-      - targets: [shipping-service:8087]
-        labels: {service: shipping-service}
-      - targets: [notification-service:8088]
-        labels: {service: notification-service}
-      - targets: [order-query-service:8089]
-        labels: {service: order-query-service}
+      - targets: [ api-gateway:8080 ]
+        labels: { service: api-gateway }
+      - targets: [ product-service:8081 ]
+        labels: { service: product-service }
+      - targets: [ cart-service:8082 ]
+        labels: { service: cart-service }
+      - targets: [ checkout-service:8083 ]
+        labels: { service: checkout-service }
+      - targets: [ order-service:8084 ]
+        labels: { service: order-service }
+      - targets: [ inventory-service:8085 ]
+        labels: { service: inventory-service }
+      - targets: [ payment-service:8086 ]
+        labels: { service: payment-service }
+      - targets: [ shipping-service:8087 ]
+        labels: { service: shipping-service }
+      - targets: [ notification-service:8088 ]
+        labels: { service: notification-service }
+      - targets: [ order-query-service:8089 ]
+        labels: { service: order-query-service }

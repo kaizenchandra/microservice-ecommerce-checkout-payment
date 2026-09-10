@@ -5,7 +5,9 @@ import java.math.RoundingMode;
 import java.util.Currency;
 import java.util.Objects;
 
-/** Nonnegative monetary value. Round explicitly at calculation boundaries, never on input. */
+/**
+ * Nonnegative monetary value. Round explicitly at calculation boundaries, never on input.
+ */
 public record Money(BigDecimal amount, Currency currency) {
     public Money {
         Objects.requireNonNull(amount, "amount");

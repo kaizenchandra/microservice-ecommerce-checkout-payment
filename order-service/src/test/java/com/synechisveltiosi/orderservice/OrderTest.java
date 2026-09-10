@@ -17,17 +17,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class OrderTest {
     static final UUID CUSTOMER = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
     static OrderDtos.Create command(UUID id) {
         return new OrderDtos.Create(id, CUSTOMER, UUID.randomUUID(), 1L,
                 List.of(new OrderEvents.Line(UUID.randomUUID(), "SKU-1", "Demo item", 2,
                         new Money(new BigDecimal("12.50"), Currency.getInstance("USD")))),
                 "tok_success", new OrderEvents.Address("Demo Buyer", "1 Test Street", "Test City", "12345", "US"), null);
     }
+
     static EventEnvelope<OrderEvents.Event> envelope(UUID id, long version, OrderEvents.Event event) {
         return new EventEnvelope<>(UUID.randomUUID(), new EventCodec(JsonMapper.builder().build()).type(event),
                 UUID.randomUUID(), UUID.randomUUID(), "Order", id, version, Instant.parse("2026-09-09T00:00:00Z"), 1, null, event);
     }
-    @Test void reconstructsImmutableSnapshotAndNotesAndRejectsGaps() {
+
+    @Test
+    void reconstructsImmutableSnapshotAndNotesAndRejectsGaps() {
         var id = UUID.randomUUID();
         var created = envelope(id, 1, command(id).event());
         var note = envelope(id, 2, new OrderEvents.OrderNoteAdded(CUSTOMER, "Demo note"));
@@ -40,7 +44,9 @@ class OrderTest {
         assertThrows(IllegalStateException.class, () -> OrderAggregate.replay(UUID.randomUUID(), List.of(created)));
         assertThrows(IllegalStateException.class, () -> OrderAggregate.replay(id, List.of(created, created)));
     }
-    @Test void schemaOneDefaultsSalesChannelAndIgnoresFutureFields() {
+
+    @Test
+    void schemaOneDefaultsSalesChannelAndIgnoresFutureFields() {
         var codec = new EventCodec(JsonMapper.builder().build());
         var id = UUID.randomUUID();
         var json = codec.encode(envelope(id, 1, command(id).event()));
@@ -50,12 +56,11 @@ class OrderTest {
         assertEquals(codec.decode(json), codec.decode(json.replace("\"salesChannel\":\"WEB\"", "\"salesChannel\":\"WEB\",\"futureField\":true")));
         assertThrows(IllegalStateException.class, () -> codec.decode(json.replace("\"schemaVersion\":1", "\"schemaVersion\":2")));
     }
-    // Represents a schema-1 consumer written before salesChannel was introduced.
-    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
-    record OriginalReader(UUID orderId, UUID customerId, Money total) { }
 
-    @Test void checkedInFixturesWorkForOldAndNewReaders() throws Exception {
-        var mapper = JsonMapper.builder().build(); var codec = new EventCodec(mapper);
+    @Test
+    void checkedInFixturesWorkForOldAndNewReaders() throws Exception {
+        var mapper = JsonMapper.builder().build();
+        var codec = new EventCodec(mapper);
         for (var variant : List.of("original", "additive")) {
             try (var input = getClass().getResourceAsStream("/contracts/order-created-v1-" + variant + ".json")) {
                 assertNotNull(input);
@@ -68,30 +73,37 @@ class OrderTest {
             }
         }
     }
-    @Test void terminalDecisionsWaitForAllFactsRegardlessOfDeliveryOrder() {
+
+    @Test
+    void terminalDecisionsWaitForAllFactsRegardlessOfDeliveryOrder() {
         var scenarios = List.of(
                 List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentCreated),
                 List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentFailed, OrderEvents.Fact.InventoryReleased),
                 List.of(OrderEvents.Fact.InventoryReserved, OrderEvents.Fact.PaymentCompleted, OrderEvents.Fact.ShipmentFailed,
                         OrderEvents.Fact.PaymentRefunded, OrderEvents.Fact.InventoryReleased));
-        for (var scenario : scenarios) for (int seed = 0; seed < 100; seed++) {
-            var ordered = new ArrayList<>(scenario); Collections.shuffle(ordered, new Random(seed));
-            var id = UUID.randomUUID(); var history = new ArrayList<EventEnvelope<OrderEvents.Event>>();
-            history.add(envelope(id, 1, command(id).event()));
-            for (int i = 0; i < ordered.size(); i++) {
-                history.add(envelope(id, i + 2, new OrderEvents.OrderFactRecorded(ordered.get(i))));
+        for (var scenario : scenarios)
+            for (int seed = 0; seed < 100; seed++) {
+                var ordered = new ArrayList<>(scenario);
+                Collections.shuffle(ordered, new Random(seed));
+                var id = UUID.randomUUID();
+                var history = new ArrayList<EventEnvelope<OrderEvents.Event>>();
+                history.add(envelope(id, 1, command(id).event()));
+                for (int i = 0; i < ordered.size(); i++) {
+                    history.add(envelope(id, i + 2, new OrderEvents.OrderFactRecorded(ordered.get(i))));
+                    var aggregate = OrderAggregate.replay(id, history);
+                    if (i < ordered.size() - 1) assertNull(aggregate.eligibleTerminal());
+                }
                 var aggregate = OrderAggregate.replay(id, history);
-                if (i < ordered.size() - 1) assertNull(aggregate.eligibleTerminal());
+                boolean success = scenario.contains(OrderEvents.Fact.ShipmentCreated);
+                assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, aggregate.eligibleTerminal());
+                OrderEvents.Event terminal = success ? new OrderEvents.OrderCompleted(id, CUSTOMER) : new OrderEvents.OrderCancelled(id, CUSTOMER);
+                history.add(envelope(id, history.size() + 1, terminal));
+                assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, OrderAggregate.replay(id, history).status());
             }
-            var aggregate = OrderAggregate.replay(id, history);
-            boolean success = scenario.contains(OrderEvents.Fact.ShipmentCreated);
-            assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, aggregate.eligibleTerminal());
-            OrderEvents.Event terminal = success ? new OrderEvents.OrderCompleted(id, CUSTOMER) : new OrderEvents.OrderCancelled(id, CUSTOMER);
-            history.add(envelope(id, history.size() + 1, terminal));
-            assertEquals(success ? OrderAggregate.Status.COMPLETED : OrderAggregate.Status.CANCELLED, OrderAggregate.replay(id, history).status());
-        }
     }
-    @Test void boundsNotesAndRejectsInvalidPrices() {
+
+    @Test
+    void boundsNotesAndRejectsInvalidPrices() {
         var id = UUID.randomUUID();
         var history = new ArrayList<EventEnvelope<OrderEvents.Event>>();
         history.add(envelope(id, 1, command(id).event()));
@@ -99,5 +111,10 @@ class OrderTest {
         assertThrows(IllegalArgumentException.class, () -> OrderAggregate.replay(id, history).addNote("Another"));
         assertThrows(IllegalArgumentException.class, () -> new OrderEvents.Line(UUID.randomUUID(), "SKU-1", "Item", 0,
                 new Money(BigDecimal.ONE, Currency.getInstance("USD"))));
+    }
+
+    // Represents a schema-1 consumer written before salesChannel was introduced.
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record OriginalReader(UUID orderId, UUID customerId, Money total) {
     }
 }

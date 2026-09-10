@@ -10,12 +10,19 @@ public class PaymentWorker {
     private static final Logger LOG = LoggerFactory.getLogger(PaymentWorker.class);
     private final PaymentTransactions transactions;
     private final PaymentProvider provider;
-    public PaymentWorker(PaymentTransactions transactions, PaymentProvider provider) { this.transactions = transactions; this.provider = provider; }
+
+    public PaymentWorker(PaymentTransactions transactions, PaymentProvider provider) {
+        this.transactions = transactions;
+        this.provider = provider;
+    }
+
     public boolean processOne() {
-        if (TransactionSynchronizationManager.isActualTransactionActive()) throw new IllegalStateException("Worker must run outside a transaction");
+        if (TransactionSynchronizationManager.isActualTransactionActive())
+            throw new IllegalStateException("Worker must run outside a transaction");
         var pending = transactions.claim();
         if (pending.isEmpty()) return false;
-        var claim = pending.get(); var input = claim.input().payload();
+        var claim = pending.get();
+        var input = claim.input().payload();
         var request = new PaymentProvider.Request(claim.paymentId(), input.total(), input.paymentToken());
         try {
             // Absence in this strongly consistent simulator permits reusing the SAME provider key.

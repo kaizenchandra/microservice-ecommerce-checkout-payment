@@ -2,7 +2,9 @@ package com.synechisveltiosi.cartservice;
 
 import com.synechisveltiosi.cartservice.domain.Cart;
 import org.junit.jupiter.api.Test;
+
 import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class CartTest {
@@ -35,7 +37,9 @@ class CartTest {
     @Test
     void boundsDistinctItemsButAllowsUpdatingExistingLines() {
         Cart cart = new Cart(UUID.randomUUID());
-        for (int i = 0; i < 50; i++) { cart.add(UUID.randomUUID(), 1); }
+        for (int i = 0; i < 50; i++) {
+            cart.add(UUID.randomUUID(), 1);
+        }
         assertThrows(IllegalArgumentException.class, () -> cart.add(UUID.randomUUID(), 1));
         cart.set(cart.items().keySet().iterator().next(), 2);
         assertEquals(50, cart.items().size());

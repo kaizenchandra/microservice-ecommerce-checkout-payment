@@ -46,12 +46,12 @@ reliable reconciliation semantics with bounded network calls. An eventually cons
 
 ## Deterministic simulator outcomes
 
-| Fake token | Simulator behavior | Application result |
-|---|---|---|
-| tok_success | Persist a successful charge and return it | COMPLETED + PaymentCompleted |
-| tok_declined | Persist a terminal decline, with no charge effect | FAILED + PaymentFailed |
-| tok_timeout | Persist success, then lose the response after commit | UNKNOWN, then COMPLETED after reconciliation |
-| tok_error | First two charge calls report temporary unavailability; the third persists success | UNKNOWN during retries, then COMPLETED |
+| Fake token   | Simulator behavior                                                                 | Application result                           |
+|--------------|------------------------------------------------------------------------------------|----------------------------------------------|
+| tok_success  | Persist a successful charge and return it                                          | COMPLETED + PaymentCompleted                 |
+| tok_declined | Persist a terminal decline, with no charge effect                                  | FAILED + PaymentFailed                       |
+| tok_timeout  | Persist success, then lose the response after commit                               | UNKNOWN, then COMPLETED after reconciliation |
+| tok_error    | First two charge calls report temporary unavailability; the third persists success | UNKNOWN during retries, then COMPLETED       |
 
 The token whitelist is synthetic. Tokens never appear in payment REST views, outgoing
 payment events or operational error messages. PaymentCompleted includes the customer,

@@ -1,9 +1,12 @@
 package com.synechisveltiosi.platform.contracts;
 
 import org.junit.jupiter.api.Test;
+
 import java.math.BigDecimal;
 import java.util.Currency;
-import static org.junit.jupiter.api.Assertions.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MoneyTest {
     private static final Currency USD = Currency.getInstance("USD");

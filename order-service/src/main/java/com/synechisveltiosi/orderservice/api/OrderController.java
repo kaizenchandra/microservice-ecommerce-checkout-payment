@@ -9,13 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
 import java.util.List;
@@ -26,11 +20,15 @@ import java.util.UUID;
 public class OrderController {
     private final OrderService orders;
     private final OutboxPublisher outbox;
-    public OrderController(OrderService orders, OutboxPublisher outbox) { this.orders = orders; this.outbox = outbox; }
+
+    public OrderController(OrderService orders, OutboxPublisher outbox) {
+        this.orders = orders;
+        this.outbox = outbox;
+    }
 
     @PostMapping
     public ResponseEntity<OrderDtos.Accepted> create(@Valid @RequestBody OrderDtos.Create command,
-            @RequestHeader("Idempotency-Key") UUID key, HttpServletRequest request) {
+                                                     @RequestHeader("Idempotency-Key") UUID key, HttpServletRequest request) {
         var accepted = orders.create(command, key, metadata(request, key));
         return ResponseEntity.accepted().location(URI.create("/api/orders/" + accepted.orderId())).body(accepted);
     }
@@ -48,7 +46,9 @@ public class OrderController {
     }
 
     @GetMapping("/{id}/events")
-    public List<EventEnvelope<OrderEvents.Event>> history(@PathVariable UUID id) { return orders.history(id); }
+    public List<EventEnvelope<OrderEvents.Event>> history(@PathVariable UUID id) {
+        return orders.history(id);
+    }
 
     @GetMapping("/{id}/outbox")
     public List<OutboxPublisher.Delivery> deliveries(@PathVariable UUID id) {

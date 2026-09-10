@@ -15,7 +15,7 @@ import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * Curl-only demo authentication; JWT replaces this adapter in Phase 11.
+ * JWT is the default; Basic authentication requires an explicit legacy/test opt-in.
  */
 @Configuration
 public class SecurityConfiguration {
@@ -25,6 +25,7 @@ public class SecurityConfiguration {
     }
 
     @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "demo.auth.basic-enabled", havingValue = "true")
     UserDetailsService users(PasswordEncoder encoder,
                              @Value("${demo.auth.customer-password}") String customer,
                              @Value("${demo.auth.second-customer-password}") String second,
@@ -38,14 +39,15 @@ public class SecurityConfiguration {
     private AuthenticationEntryPoint problemAuthenticationEntryPoint() {
         return (request, response, failure) -> {
             response.setStatus(401);
-            response.setHeader("WWW-Authenticate", "Basic realm=\"checkout-demo\"");
+            response.setHeader("WWW-Authenticate", "Bearer");
             response.setContentType("application/problem+json");
             response.getWriter().write("{\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"Valid authentication is required\"}");
         };
     }
 
     @Bean
-    SecurityFilterChain security(HttpSecurity http) throws Exception {
+    SecurityFilterChain security(HttpSecurity http, @Value("${demo.auth.basic-enabled:false}") boolean basicEnabled) throws Exception {
+        if (basicEnabled) http.httpBasic(basic -> basic.authenticationEntryPoint(problemAuthenticationEntryPoint()));
         return http.csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
@@ -54,7 +56,8 @@ public class SecurityConfiguration {
                         .requestMatchers("/api/inventory", "/api/inventory/**").hasRole("ADMIN")
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .anyRequest().denyAll())
-                .httpBasic(basic -> basic.authenticationEntryPoint(problemAuthenticationEntryPoint()))
+                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(JwtConfiguration.authenticationConverter()))
+                        .authenticationEntryPoint(problemAuthenticationEntryPoint()))
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint(problemAuthenticationEntryPoint())
                         .accessDeniedHandler((request, response, failure) -> {

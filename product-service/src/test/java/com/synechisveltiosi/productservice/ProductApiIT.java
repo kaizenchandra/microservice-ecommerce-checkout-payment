@@ -29,12 +29,12 @@ class ProductApiIT {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static ConfigurableApplicationContext context;
     private static String base;
-    
+
 
     @BeforeAll
     static void start() throws Exception {
         DATABASE.start();
-        
+
         context = SpringApplication.run(ProductServiceApplication.class,
                 "--server.port=0", "--spring.profiles.active=demo",
                 "--spring.datasource.url=" + DATABASE.getJdbcUrl(),
@@ -42,14 +42,16 @@ class ProductApiIT {
                 "--spring.datasource.password=" + DATABASE.getPassword(),
                 "--demo.auth.customer-password=" + PASSWORD,
                 "--demo.auth.second-customer-password=" + PASSWORD,
-                "--demo.auth.admin-password=" + PASSWORD );
+                "--demo.auth.admin-password=" + PASSWORD);
         base = "http://localhost:" + context.getEnvironment().getProperty("local.server.port");
     }
 
     @AfterAll
     static void stop() {
-        if (context != null) { context.close(); }
-        
+        if (context != null) {
+            context.close();
+        }
+
         DATABASE.stop();
     }
 
@@ -64,8 +66,10 @@ class ProductApiIT {
                 : HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    private static JsonNode body(HttpResponse<String> response) { return JSON.readTree(response.body()); }
-    
+    private static JsonNode body(HttpResponse<String> response) {
+        return JSON.readTree(response.body());
+    }
+
     @Test
     void seededCatalogIsPaginatedAndProtected() throws Exception {
         assertEquals(401, request("GET", "/api/products", null, null).statusCode());

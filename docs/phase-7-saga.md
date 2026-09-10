@@ -7,13 +7,13 @@ Checkout HTTP orchestration and the CQRS query projection are still separate wor
 
 ## Complete workflows
 
-| Trigger | Resulting facts and final order outcome |
-|---|---|
-| Stock available, successful payment, supported destination | InventoryReserved → PaymentCompleted → ShipmentCreated → OrderCompleted → CustomerNotified |
-| Missing or insufficient stock | InventoryReservationFailed → OrderCancelled → CustomerNotified; no charge |
-| Terminal payment decline | PaymentFailed → InventoryReleased → OrderCancelled → CustomerNotified |
-| Shipping rejection after payment | ShipmentFailed → PaymentRefunded → InventoryReleased → OrderCancelled → CustomerNotified |
-| Charge or refund response loss | Retain UNKNOWN/recovery work; reconcile the durable provider effect before emitting completion/refund |
+| Trigger                                                    | Resulting facts and final order outcome                                                               |
+|------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| Stock available, successful payment, supported destination | InventoryReserved → PaymentCompleted → ShipmentCreated → OrderCompleted → CustomerNotified            |
+| Missing or insufficient stock                              | InventoryReservationFailed → OrderCancelled → CustomerNotified; no charge                             |
+| Terminal payment decline                                   | PaymentFailed → InventoryReleased → OrderCancelled → CustomerNotified                                 |
+| Shipping rejection after payment                           | ShipmentFailed → PaymentRefunded → InventoryReleased → OrderCancelled → CustomerNotified              |
+| Charge or refund response loss                             | Retain UNKNOWN/recovery work; reconcile the durable provider effect before emitting completion/refund |
 
 Shipping maps PaymentCompleted into a local contract, records one shipment outcome per
 order and writes its outbox atomically with input deduplication. Tracking references are
@@ -70,11 +70,11 @@ order. The simulator does not support partial refunds or actual funds.
 
 Two additional synthetic postal codes exercise refund recovery when country is `ZZ`:
 
-| Postal code | Refund behavior |
-|---|---|
-| REFUND-RETRY | First two calls are unavailable; third succeeds. Order stays COMPENSATING until refund/release facts arrive. |
-| REFUND-TIMEOUT | Refund commits, then its response is lost; reconciliation finishes without a second refund. |
-| Any other valid postal code | Refund succeeds immediately. |
+| Postal code                 | Refund behavior                                                                                              |
+|-----------------------------|--------------------------------------------------------------------------------------------------------------|
+| REFUND-RETRY                | First two calls are unavailable; third succeeds. Order stays COMPENSATING until refund/release facts arrive. |
+| REFUND-TIMEOUT              | Refund commits, then its response is lost; reconciliation finishes without a second refund.                  |
+| Any other valid postal code | Refund succeeds immediately.                                                                                 |
 
 Inventory stores PaymentFailed/PaymentRefunded as durable compensation intents. If the
 reservation is missing, the intent remains pending. Once the reservation arrives, a short

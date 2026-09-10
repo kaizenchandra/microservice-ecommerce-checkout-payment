@@ -1,14 +1,6 @@
 package com.synechisveltiosi.cartservice.domain;
 
-import jakarta.persistence.CollectionTable;
-import jakarta.persistence.Column;
-import jakarta.persistence.ElementCollection;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.MapKeyColumn;
-import jakarta.persistence.Table;
-import jakarta.persistence.Version;
+import jakarta.persistence.*;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -37,13 +29,20 @@ public class Cart {
     @Column(name = "quantity", nullable = false)
     private Map<UUID, Integer> items = new HashMap<>();
 
-    protected Cart() { }
+    protected Cart() {
+    }
 
     public Cart(UUID customerId) {
         this.id = UUID.randomUUID();
         this.customerId = Objects.requireNonNull(customerId);
         this.createdAt = Instant.now();
         this.updatedAt = createdAt;
+    }
+
+    private static void requireQuantity(int quantity) {
+        if (quantity < 1 || quantity > MAX_QUANTITY) {
+            throw new IllegalArgumentException("Quantity must be between 1 and 99");
+        }
     }
 
     public void add(UUID productId, int quantity) {
@@ -66,16 +65,27 @@ public class Cart {
         updatedAt = Instant.now();
     }
 
-    private static void requireQuantity(int quantity) {
-        if (quantity < 1 || quantity > MAX_QUANTITY) {
-            throw new IllegalArgumentException("Quantity must be between 1 and 99");
-        }
+    public UUID id() {
+        return id;
     }
 
-    public UUID id() { return id; }
-    public UUID customerId() { return customerId; }
-    public long version() { return version; }
-    public Instant createdAt() { return createdAt; }
-    public Instant updatedAt() { return updatedAt; }
-    public Map<UUID, Integer> items() { return Map.copyOf(items); }
+    public UUID customerId() {
+        return customerId;
+    }
+
+    public long version() {
+        return version;
+    }
+
+    public Instant createdAt() {
+        return createdAt;
+    }
+
+    public Instant updatedAt() {
+        return updatedAt;
+    }
+
+    public Map<UUID, Integer> items() {
+        return Map.copyOf(items);
+    }
 }

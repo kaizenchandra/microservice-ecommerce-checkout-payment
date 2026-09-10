@@ -1,7 +1,8 @@
 package com.synechisveltiosi.paymentservice.application;
 
 import com.synechisveltiosi.paymentservice.api.PaymentDtos;
-import com.synechisveltiosi.paymentservice.domain.*;
+import com.synechisveltiosi.paymentservice.domain.ChargeResult;
+import com.synechisveltiosi.paymentservice.domain.PaymentEvents;
 import com.synechisveltiosi.platform.contracts.EventEnvelope;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,15 +10,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.*;
-import tools.jackson.databind.json.JsonMapper;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.*;
+import java.util.HexFormat;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -26,11 +30,38 @@ public class PaymentTransactions {
     private final JsonMapper json;
     private final MeterRegistry metrics;
     private final int leaseSeconds;
+
     public PaymentTransactions(JdbcTemplate jdbc, JsonMapper json, MeterRegistry metrics,
                                @Value("${payment.recovery.lease-seconds:30}") int leaseSeconds) {
-        if (leaseSeconds < 5 || leaseSeconds > 300) throw new IllegalArgumentException("Payment lease must be 5–300 seconds");
-        this.jdbc = jdbc; this.json = json; this.metrics = metrics; this.leaseSeconds = leaseSeconds;
+        if (leaseSeconds < 5 || leaseSeconds > 300)
+            throw new IllegalArgumentException("Payment lease must be 5–300 seconds");
+        this.jdbc = jdbc;
+        this.json = json;
+        this.metrics = metrics;
+        this.leaseSeconds = leaseSeconds;
     }
+
+    public static String hash(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static ApiException conflict(String code, String detail) {
+        return new ApiException(HttpStatus.CONFLICT, code, detail);
+    }
+
+    public static void afterCommit(Runnable action) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
+    }
+
     @Transactional
     public void accept(EventEnvelope<PaymentEvents.InventoryReserved> event) {
         var input = event.payload();
@@ -53,7 +84,6 @@ public class PaymentTransactions {
         if (inserted == 1) afterCommit(() -> metrics.counter("payments.accepted").increment());
     }
 
-    public record Claim(UUID paymentId, UUID token, int attempt, EventEnvelope<PaymentEvents.InventoryReserved> input) { }
     @Transactional(timeout = 5)
     public Optional<Claim> claim() {
         var rows = jdbc.queryForList("""
@@ -63,15 +93,19 @@ public class PaymentTransactions {
                 ORDER BY created_at, payment_id LIMIT 1 FOR UPDATE SKIP LOCKED
                 """);
         if (rows.isEmpty()) return Optional.empty();
-        var row = rows.getFirst(); var id = (UUID) row.get("payment_id"); var token = UUID.randomUUID();
+        var row = rows.getFirst();
+        var id = (UUID) row.get("payment_id");
+        var token = UUID.randomUUID();
         jdbc.update("""
                 UPDATE payment SET status = 'UNKNOWN', attempts = attempts + 1, lease_token = ?,
                 lease_until = clock_timestamp() + (? * interval '1 second'), updated_at = clock_timestamp()
                 WHERE payment_id = ?
                 """, token, leaseSeconds, id);
         return Optional.of(new Claim(id, token, ((Number) row.get("attempts")).intValue() + 1,
-                json.readValue((String) row.get("input_event"), new TypeReference<EventEnvelope<PaymentEvents.InventoryReserved>>() { })));
+                json.readValue((String) row.get("input_event"), new TypeReference<EventEnvelope<PaymentEvents.InventoryReserved>>() {
+                })));
     }
+
     @Transactional
     public boolean finish(Claim claim, ChargeResult result) {
         int changed = jdbc.update("""
@@ -80,14 +114,15 @@ public class PaymentTransactions {
                 WHERE payment_id = ? AND lease_token = ? AND status = 'UNKNOWN'
                 """, result.status(), result.providerReference(), claim.paymentId(), claim.token());
         if (changed == 0) return false; // A later worker owns the lease, or terminal state already committed.
-        var input = claim.input(); var order = input.payload();
+        var input = claim.input();
+        var order = input.payload();
         boolean success = result.status().equals("COMPLETED");
         String type = success ? "PaymentCompleted" : "PaymentFailed";
         Object payload = success ? new PaymentEvents.Completed(claim.paymentId(), order.orderId(), order.customerId(), order.total(),
                 result.providerReference(), order.items(), order.shippingAddress())
                 : new PaymentEvents.Failed(claim.paymentId(), order.orderId(), order.customerId(), order.total(), "DECLINED");
         var event = new EventEnvelope<>(UUID.randomUUID(), type, input.correlationId(), input.eventId(), "Payment", claim.paymentId(),
-                1, Instant.now(), 1, input.traceparent(), payload);
+                1, Instant.now(), 1, com.synechisveltiosi.paymentservice.infrastructure.Telemetry.currentTraceparentOr(input.traceparent()), payload);
         jdbc.update("""
                 INSERT INTO outbox_event(id, aggregate_id, aggregate_version, event_type, topic, payload, created_at)
                 VALUES (?, ?, 1, ?, 'payment.events', CAST(? AS jsonb), ?)
@@ -95,6 +130,7 @@ public class PaymentTransactions {
         afterCommit(() -> metrics.counter(success ? "payments.completed" : "payments.declined").increment());
         return true;
     }
+
     @Transactional
     public void defer(Claim claim, String error) {
         long delay = Math.min(60000L, 1000L << Math.min(claim.attempt() - 1, 6)) + ThreadLocalRandom.current().nextLong(250);
@@ -105,10 +141,12 @@ public class PaymentTransactions {
                 """, error, delay, claim.paymentId(), claim.token());
         if (changed == 1) afterCommit(() -> metrics.counter("payments.recovery.deferred").increment());
     }
+
     @Transactional(readOnly = true)
     public PaymentDtos.View get(UUID orderId, UUID customerId, boolean admin) {
         var rows = jdbc.query("SELECT * FROM payment WHERE payment_id = ?", (row, index) -> {
-            var input = json.readValue(row.getString("input_event"), new TypeReference<EventEnvelope<PaymentEvents.InventoryReserved>>() { });
+            var input = json.readValue(row.getString("input_event"), new TypeReference<EventEnvelope<PaymentEvents.InventoryReserved>>() {
+            });
             return new PaymentDtos.View(orderId, orderId, row.getObject("customer_id", UUID.class), input.payload().total(), row.getString("status"),
                     row.getLong("version"), row.getInt("attempts"), row.getObject("provider_reference", UUID.class), row.getString("last_error"),
                     row.getTimestamp("created_at").toInstant(), row.getTimestamp("updated_at").toInstant());
@@ -117,6 +155,7 @@ public class PaymentTransactions {
             throw new ApiException(HttpStatus.NOT_FOUND, "PAYMENT_NOT_FOUND", "Payment not found");
         return rows.getFirst();
     }
+
     @Transactional
     public PaymentDtos.View retry(UUID id) {
         get(id, null, true);
@@ -126,14 +165,7 @@ public class PaymentTransactions {
                 """, id);
         return get(id, null, true);
     }
-    public static String hash(String value) {
-        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8))); }
-        catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
-    }
-    private static ApiException conflict(String code, String detail) { return new ApiException(HttpStatus.CONFLICT, code, detail); }
-    public static void afterCommit(Runnable action) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override public void afterCommit() { action.run(); }
-        });
+
+    public record Claim(UUID paymentId, UUID token, int attempt, EventEnvelope<PaymentEvents.InventoryReserved> input) {
     }
 }

@@ -15,7 +15,9 @@ import java.util.UUID;
 public class ProductService {
     private final ProductRepository products;
 
-    public ProductService(ProductRepository products) { this.products = products; }
+    public ProductService(ProductRepository products) {
+        this.products = products;
+    }
 
     @Transactional(readOnly = true)
     public ProductDtos.PageView list(int page, int size) {
@@ -25,7 +27,9 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public ProductDtos.View get(UUID id) { return ProductDtos.View.from(find(id)); }
+    public ProductDtos.View get(UUID id) {
+        return ProductDtos.View.from(find(id));
+    }
 
     @Transactional
     public ProductDtos.View create(ProductDtos.Create command) {
