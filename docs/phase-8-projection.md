@@ -4,12 +4,12 @@ The order-query service consumes order, inventory, payment, shipping and notific
 streams into its own PostgreSQL database. Customer reads never contact the write services.
 The gateway exposes these APIs using the existing demo Basic credentials:
 
-| Method and path | Access | Result |
-|---|---|---|
-| GET `/api/order-views/{orderId}` | Owner or admin | Order snapshot, notes, outcome and service statuses |
-| GET `/api/order-views?page=0&size=20&status=COMPLETED` | Customer or admin | Owned orders (all for admin), newest first |
-| GET `/api/order-views/admin/projection` | Admin | Active/building generations, journal and buffered counts |
-| POST `/api/order-views/admin/rebuild` | Admin | 202 with generation; 409 if already building |
+| Method and path                                        | Access            | Result                                                   |
+|--------------------------------------------------------|-------------------|----------------------------------------------------------|
+| GET `/api/order-views/{orderId}`                       | Owner or admin    | Order snapshot, notes, outcome and service statuses      |
+| GET `/api/order-views?page=0&size=20&status=COMPLETED` | Customer or admin | Owned orders (all for admin), newest first               |
+| GET `/api/order-views/admin/projection`                | Admin             | Active/building generations, journal and buffered counts |
+| POST `/api/order-views/admin/rebuild`                  | Admin             | 202 with generation; 409 if already building             |
 
 An inaccessible order returns 404. Pages are limited to 100 entries. The order stream
 is authoritative for the overall status; independent service statuses are eventually
@@ -35,7 +35,7 @@ This demo serializes ingestion and rebuild batches and refolds each affected ord
 history. It prioritizes understandable correctness over high throughput. Rebuilds can
 only recover events already ingested into the local journal. Events lost before ingestion
 or expired from Kafka require an external archive/import capability, which is not
-implemented. Remote order-details composition is Phase 9.
+implemented. Remote order-details composition is implemented in [Phase 9](phase-9-composition.md).
 
 ## Verification
 
@@ -44,4 +44,7 @@ ownership, rollback, token removal, live ingestion during rebuild, failed builds
 restart recovery. The packaged-service saga suite additionally checks successful and
 refunded orders and rebuild equality through the gateway against real producer events.
 
-Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures, errors or skips. Compose configuration and whitespace checks passed. The query service and gateway were rebuilt and deployed healthy. A read-only gateway check verified the retained synthetic order as CANCELLED at version 4, inventory REJECTED and notified. The journal contained six events, one visible order and zero buffered events. Rebuild execution was verified in isolated integration tests.
+Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures, errors or skips. Compose configuration and
+whitespace checks passed. The query service and gateway were rebuilt and deployed healthy. A read-only gateway check
+verified the retained synthetic order as CANCELLED at version 4, inventory REJECTED and notified. The journal contained
+six events, one visible order and zero buffered events. Rebuild execution was verified in isolated integration tests.

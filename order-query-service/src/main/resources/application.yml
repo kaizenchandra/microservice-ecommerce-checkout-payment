@@ -61,3 +61,9 @@ projection:
     enabled: ${PROJECTION_REBUILD_ENABLED:true}
     poll-delay-ms: 500
     batch-size: 100
+details:
+  payment-url: ${PAYMENT_SERVICE_URL:http://localhost:8086}
+  inventory-url: ${INVENTORY_SERVICE_URL:http://localhost:8085}
+  shipping-url: ${SHIPPING_SERVICE_URL:http://localhost:8087}
+  timeout-ms: ${DETAILS_TIMEOUT_MS:1000}
+  max-concurrent-lookups: ${DETAILS_MAX_CONCURRENT_LOOKUPS:24}

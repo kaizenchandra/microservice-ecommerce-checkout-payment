@@ -1,10 +1,12 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–8 are implemented, including event-sourced orders and a complete simulated checkout saga from accepted order through shipping, compensation and notification.**
+the requested thirteen phases. **Phases 1–9 are implemented, including event-sourced orders and a complete simulated
+checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
-authentication. CQRS query APIs and generation-based rebuilds are implemented; checkout HTTP orchestration remains pending.
+authentication. CQRS query APIs and generation-based rebuilds are implemented; checkout HTTP orchestration remains
+pending.
 
 ## Start the Compose stack
 
@@ -27,6 +29,9 @@ See [Phase 6: Payment](docs/phase-6-payment.md) for simulated charges, idempoten
 UNKNOWN outcomes and durable recovery.
 See [Phase 7: Choreography](docs/phase-7-saga.md) for complete order outcomes, refunds,
 shipping, simulated notifications and isolated end-to-end tests.
+See [Phase 8: CQRS projection](docs/phase-8-projection.md) for query APIs and rebuilds.
+See [Phase 9: Order details composition](docs/phase-9-composition.md) for owner lookups,
+partial availability and customer access controls.
 
 ## Current directory structure
 
@@ -87,9 +92,12 @@ curl --fail http://localhost:9090/-/ready
 python3 infrastructure/scripts/verify-catalog-cart.py --outage
 ```
 
-Product/cart/order business APIs require demo credentials from `.env`; see the Phase 3 guide.
-Their readiness includes PostgreSQL. Other applications still expose foundation health.
-The gateway also routes inventory and payment APIs. JWT and other service routes arrive later.
+Business APIs require demo credentials from `.env`; see the phase guides for access rules.
+The gateway routes product, cart, order, inventory, payment, shipping, notification and
+order-view APIs, including composed order details. Database-backed business services
+include PostgreSQL in readiness. JWT authentication and checkout HTTP orchestration
+remain pending. Phase 9 source changes must be deployed before using its new endpoints
+on an existing Phase 8 stack.
 
 Build/start a single service from source:
 
@@ -119,21 +127,21 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 
 ## Implementation progress
 
-| Phase | Deliverable | Status |
-|---|---|---|
-| 1 | Architecture, module foundation, generic contracts | Implemented |
-| 2 | Compose, isolated PostgreSQL databases, Kafka KRaft, Redis, observability infrastructure | Implemented |
-| 3 | Product and cart APIs, migrations, seed data | Implemented |
-| 4 | Event-sourced order, outbox and reconstruction | Implemented |
-| 5 | Inventory reservations and optimistic concurrency | Implemented |
-| 6 | Payment simulator, persisted idempotency and recovery | Implemented |
-| 7 | Choreography, shipping, notifications and compensation | Implemented |
-| 8 | CQRS projection and rebuild | Implemented |
-| 9 | Order details composition | Next |
-| 10 | Resilience, retries, DLT and failure controls | Pending |
-| 11 | JWT and end-to-end tracing / business metrics | Pending |
-| 12 | Integration, API, messaging, concurrency and saga tests | Pending |
-| 13 | Executable full walkthrough, operational recovery and final documentation | Pending |
+| Phase | Deliverable                                                                              | Status      |
+|-------|------------------------------------------------------------------------------------------|-------------|
+| 1     | Architecture, module foundation, generic contracts                                       | Implemented |
+| 2     | Compose, isolated PostgreSQL databases, Kafka KRaft, Redis, observability infrastructure | Implemented |
+| 3     | Product and cart APIs, migrations, seed data                                             | Implemented |
+| 4     | Event-sourced order, outbox and reconstruction                                           | Implemented |
+| 5     | Inventory reservations and optimistic concurrency                                        | Implemented |
+| 6     | Payment simulator, persisted idempotency and recovery                                    | Implemented |
+| 7     | Choreography, shipping, notifications and compensation                                   | Implemented |
+| 8     | CQRS projection and rebuild                                                              | Implemented |
+| 9     | Order details composition                                                                | Implemented |
+| 10    | Resilience, retries, DLT and failure controls                                            | Next        |
+| 11    | JWT and end-to-end tracing / business metrics                                            | Pending     |
+| 12    | Integration, API, messaging, concurrency and saga tests                                  | Pending     |
+| 13    | Executable full walkthrough, operational recovery and final documentation                | Pending     |
 
 End-to-end curl examples will be added with working APIs so the walkthrough remains
 executable. The final target is `docker compose up -d --build` plus `./mvnw clean verify`.
@@ -246,4 +254,17 @@ the remaining partitions were empty. Other saga branches passed in isolated inte
 ## Phase 8 verification record
 
 See [CQRS projection and rebuild](docs/phase-8-projection.md) for query APIs,
-replay guarantees and recovery limitations. Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures, errors or skips. Compose configuration and whitespace checks passed. The query service and gateway were rebuilt and deployed healthy. A read-only gateway check verified the retained synthetic order as CANCELLED at version 4, inventory REJECTED and notified. The journal contained six events, one visible order and zero buffered events. Rebuild execution was verified in isolated integration tests.
+replay guarantees and recovery limitations. Java 21 `mvn verify` passed across all 13 modules: 68 tests, zero failures,
+errors or skips. Compose configuration and whitespace checks passed. The query service and gateway were rebuilt and
+deployed healthy. A read-only gateway check verified the retained synthetic order as CANCELLED at version 4, inventory
+REJECTED and notified. The journal contained six events, one visible order and zero buffered events. Rebuild execution
+was verified in isolated integration tests.
+
+## Phase 9 verification record
+
+See [Order details composition](docs/phase-9-composition.md) for availability semantics,
+owner access controls and bounded parallel lookups. Java 21 affected-reactor verification
+passed, including packaged-service gateway checks. Together with the preceding run of
+unaffected modules, current reports contain 73 tests, zero failures, errors or skips.
+Compose configuration and whitespace checks passed. Phase 9 is not yet deployed to the
+shared Compose stack.
