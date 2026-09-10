@@ -17,7 +17,13 @@ public class KafkaTelemetry implements RecordInterceptor<Object, Object> {
     public KafkaTelemetry(Telemetry telemetry, MeterRegistry metrics, JsonMapper json) { this.telemetry = telemetry; this.metrics = metrics; this.json = json; }
     @Override public ConsumerRecord<Object, Object> intercept(ConsumerRecord<Object, Object> record, Consumer<Object, Object> consumer) {
         var header = record.headers().lastHeader("traceparent");
-        var trace = telemetry.start("kafka.consume", SpanKind.CONSUMER, header == null ? null : new String(header.value(), StandardCharsets.UTF_8));
+        String parent = header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
+        if (parent == null) {
+            try { var node = json.readTree((String) record.value()); var value = node.get("traceparent");
+                if (value != null && !value.isNull()) parent = value.asString();
+            } catch (RuntimeException ignored) { /* The listener will validate malformed records. */ }
+        }
+        var trace = telemetry.start("kafka.consume", SpanKind.CONSUMER, parent);
         active.set(trace); trace.attribute("messaging.destination.name", record.topic());
         try {
             var node = json.readTree((String) record.value());

@@ -294,7 +294,7 @@ class InventoryApiIT {
             assertEquals(2, second.get("aggregateVersion").asLong());
             assertEquals(event.eventId().toString(), first.get("causationId").asString());
             assertEquals(event.correlationId().toString(), first.get("correlationId").asString());
-            assertEquals(event.traceparent(), new String(records.getFirst().headers().lastHeader("traceparent").value(), StandardCharsets.UTF_8));
+            assertEquals(event.traceparent().substring(0, 36), new String(records.getFirst().headers().lastHeader("traceparent").value(), StandardCharsets.UTF_8).substring(0, 36));
             assertEquals(new BigDecimal("25.00"), first.get("payload").get("total").get("amount").decimalValue().setScale(2));
             assertTrue(publisher.deliveries(event.aggregateId()).stream().allMatch(row -> row.status().equals("PUBLISHED")));
         }

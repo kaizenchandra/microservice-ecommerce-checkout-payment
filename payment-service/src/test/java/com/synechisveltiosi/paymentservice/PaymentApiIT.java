@@ -323,7 +323,7 @@ class PaymentApiIT {
             assertEquals("PaymentCompleted", output.get("eventType").asString());
             assertEquals(event.eventId().toString(), output.get("causationId").asString());
             assertEquals(event.correlationId().toString(), output.get("correlationId").asString());
-            assertEquals(event.traceparent(), new String(found.headers().lastHeader("traceparent").value(), StandardCharsets.UTF_8));
+            assertEquals(event.traceparent().substring(0, 36), new String(found.headers().lastHeader("traceparent").value(), StandardCharsets.UTF_8).substring(0, 36));
             assertFalse(found.value().contains("paymentToken"));
             assertNotNull(output.get("payload").get("shippingAddress"));
             assertEquals(publisher.deliveries(event.aggregateId()).getFirst().eventId().toString(), output.get("eventId").asString());

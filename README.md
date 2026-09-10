@@ -34,6 +34,8 @@ See [Phase 9: Order details composition](docs/phase-9-composition.md) for owner 
 partial availability and customer access controls.
 See [Phase 10: Resilience](docs/phase-10-resilience.md) for circuit breakers, bounded
 consumer retries, dead-letter topics and controlled redrive.
+See [Phase 11: Security and observability](docs/phase-11-security-observability.md)
+for JWTs, HTTP/Kafka traces and business metrics.
 
 ## Current directory structure
 
@@ -94,12 +96,13 @@ curl --fail http://localhost:9090/-/ready
 python3 infrastructure/scripts/verify-catalog-cart.py --outage
 ```
 
-Business APIs require demo credentials from `.env`; see the phase guides for access rules.
+Business APIs now require bearer JWTs; see [Phase 11](docs/phase-11-security-observability.md)
+for local token issuance and the earlier Basic-auth compatibility option.
 The gateway routes product, cart, order, inventory, payment, shipping, notification and
 order-view APIs, including composed order details. Database-backed business services
-include PostgreSQL in readiness. JWT authentication and checkout HTTP orchestration
-remain pending. Phase 9 source changes must be deployed before using its new endpoints
-on an existing Phase 8 stack.
+include PostgreSQL in readiness. Checkout HTTP orchestration remains pending.
+Deploy the updated services before using the new authentication and tracing behavior
+on an earlier shared stack.
 
 Build/start a single service from source:
 
@@ -279,3 +282,8 @@ or skips. Tests include actual dead-letter recovery and dry-run/execute redrive 
 the packaged-service saga suite. Compose configuration, script syntax and whitespace
 checks passed. See [Resilience and recovery](docs/phase-10-resilience.md).
 Phase 10 has not been deployed to the shared Compose stack.
+
+## Phase 11 verification record
+
+JWT validation and explicit HTTP/Kafka tracing are implemented. Verification is in
+progress; Phase 11 has not been deployed to the shared Compose stack.

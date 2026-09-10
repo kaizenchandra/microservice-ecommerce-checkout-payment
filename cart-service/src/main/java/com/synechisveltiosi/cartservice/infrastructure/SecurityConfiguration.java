@@ -17,6 +17,7 @@ import org.springframework.security.web.SecurityFilterChain;
  * JWT is the default; Basic authentication requires an explicit legacy/test opt-in.
  */
 @Configuration
+@org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication(type = org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET)
 public class SecurityConfiguration {
     @Bean
     PasswordEncoder passwordEncoder() {

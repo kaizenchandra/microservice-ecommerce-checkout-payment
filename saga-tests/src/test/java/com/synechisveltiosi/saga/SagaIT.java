@@ -42,9 +42,13 @@ class SagaIT {
     @TempDir
     static Path logs;
     static String gateway;
+    static final String JWT_SECRET = "isolated-saga-signing-key-minimum-32-bytes";
+    static OtlpCapture traces;
+    static String traceHeader;
 
     @BeforeAll
     static void start() throws Exception {
+        traces = new OtlpCapture();
         DB.start();
         KAFKA.start();
         var kafkaProperties = new Properties();
@@ -75,7 +79,8 @@ class SagaIT {
         PORTS.put(module, port);
         var root = Path.of("..").toAbsolutePath().normalize();
         var command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx192m", "-XX:ActiveProcessorCount=2", "-jar",
-                root.resolve(module + "/target/" + module + "-1.0.0-SNAPSHOT.jar").toString(), "--server.port=" + port,
+                root.resolve(module + "/target/" + module + "-1.0.0-SNAPSHOT.jar").toString(), "--server.port=" + port, "--security.jwt.secret=" + JWT_SECRET, "--demo.auth.basic-enabled=false",
+                "--telemetry.endpoint=" + traces.endpoint(),
                 "--spring.kafka.bootstrap-servers=" + KAFKA.getBootstrapServers(), "--demo.auth.customer-password=" + PASSWORD,
                 "--demo.auth.second-customer-password=" + PASSWORD, "--demo.auth.admin-password=" + PASSWORD, "--demo.auth.checkout-password=" + PASSWORD));
         if (database != null)
@@ -111,14 +116,15 @@ class SagaIT {
         for (var process : PROCESSES) process.destroy();
         for (var process : PROCESSES) if (!process.waitFor(10, TimeUnit.SECONDS)) process.destroyForcibly();
         KAFKA.stop();
-        DB.stop();
+        DB.stop(); if (traces != null) traces.close();
     }
 
     static JsonNode request(String method, String path, String user, Object body, int status) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create(gateway + path)).timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json").header("Idempotency-Key", UUID.randomUUID().toString());
         if (user != null)
-            builder.header("Authorization", "Basic " + Base64.getEncoder().encodeToString((user + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8)));
+            builder.header("Authorization", "Bearer " + token(user, JWT_SECRET, "checkout-demo", "ecommerce-api", 900));
+        if (traceHeader != null) builder.header("traceparent", traceHeader);
         var response = HTTP.send(builder.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build(), HttpResponse.BodyHandlers.ofString());
         assertEquals(status, response.statusCode(), path + ": " + response.body());
         return JSON.readTree(response.body());
@@ -357,5 +363,63 @@ class SagaIT {
             assertEquals(1, scalar("notification", "SELECT count(*) FROM notification WHERE order_id = ?", order.id()));
             assertEquals(order.id().toString(), JSON.readTree(original).get("aggregateId").asString());
         }
+    }
+    static String token(String subject, String secret, String issuer, String audience, int lifetime) throws Exception {
+        var encode = Base64.getUrlEncoder().withoutPadding(); long now = java.time.Instant.now().getEpochSecond();
+        String role = subject.equals("admin") ? "ADMIN" : subject.equals("checkout") ? "CHECKOUT" : "CUSTOMER";
+        String body = encode.encodeToString(JSON.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT")).getBytes(StandardCharsets.UTF_8)) + "." +
+                encode.encodeToString(JSON.writeValueAsString(Map.of("iss", issuer, "aud", List.of(audience), "sub", subject, "roles", List.of(role), "iat", now, "exp", now + lifetime)).getBytes(StandardCharsets.UTF_8));
+        var mac = javax.crypto.Mac.getInstance("HmacSHA256"); mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return body + "." + encode.encodeToString(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+    }
+    @Test void jwtIsValidatedAtGatewayAndOwnerServices() throws Exception {
+        var issuer = new ProcessBuilder("python3", "../infrastructure/scripts/demo_token.py", "--identity", "customer");
+        issuer.environment().put("JWT_SECRET", JWT_SECRET); issuer.environment().put("JWT_ISSUER", "checkout-demo"); issuer.environment().put("JWT_AUDIENCE", "ecommerce-api");
+        var process = issuer.start(); String valid;
+        try { assertTrue(process.waitFor(10, TimeUnit.SECONDS)); assertEquals(0, process.exitValue()); valid = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim(); }
+        finally { if (process.isAlive()) process.destroyForcibly(); }
+        for (String base : List.of(gateway, "http://localhost:" + PORTS.get("order-service"), "http://localhost:" + PORTS.get("order-query-service"))) {
+            String path = base.equals("http://localhost:" + PORTS.get("order-service")) ? "/api/orders/" : "/api/order-views/";
+            for (String authorization : List.of("Basic " + Base64.getEncoder().encodeToString((CUSTOMER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8)),
+                    "Bearer " + token(CUSTOMER, JWT_SECRET, "wrong-issuer", "ecommerce-api", 900),
+                    "Bearer " + token(CUSTOMER, JWT_SECRET, "checkout-demo", "wrong-audience", 900),
+                    "Bearer " + token(CUSTOMER, JWT_SECRET, "checkout-demo", "ecommerce-api", -120),
+                    "Bearer " + token(CUSTOMER, "wrong-signing-secret-at-least-32-bytes", "checkout-demo", "ecommerce-api", 900))) {
+                var response = HTTP.send(HttpRequest.newBuilder(URI.create(base + path + UUID.randomUUID())).header("Authorization", authorization).build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(401, response.statusCode()); assertFalse(response.body().contains(JWT_SECRET));
+            }
+            assertEquals(404, HTTP.send(HttpRequest.newBuilder(URI.create(base + path + UUID.randomUUID())).header("Authorization", "Bearer " + valid).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+        }
+    }
+    @Test void exportedTraceConnectsHttpAndKafkaAcrossSaga() throws Exception {
+        String traceId = UUID.randomUUID().toString().replace("-", ""); traceHeader = "00-" + traceId + "-1234567890abcdef-01";
+        Order order;
+        try { order = create("tok_success", "US", "12345", 1); awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED"); awaitView(order, "COMPLETED"); }
+        finally { traceHeader = null; }
+        Set<String> expected = Set.of("api-gateway", "order-service", "inventory-service", "payment-service", "shipping-service", "notification-service", "order-query-service");
+        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+        List<OtlpCapture.ExportedSpan> found;
+        while (true) {
+            found = traces.spans.stream().filter(span -> span.traceId().equals(traceId)).toList();
+            var ids = found.stream().map(OtlpCapture.ExportedSpan::spanId).collect(java.util.stream.Collectors.toSet());
+            if (expected.stream().allMatch(service -> foundService(traces, traceId, service)) &&
+                    found.stream().filter(span -> span.name().equals("kafka.consume")).allMatch(span -> ids.contains(span.parentId()))) break;
+            if (System.nanoTime() >= deadline) fail("Missing exported saga spans: " + found);
+            Thread.sleep(100);
+        }
+        assertTrue(found.stream().anyMatch(span -> span.service().equals("api-gateway") && span.name().equals("http.server")));
+        for (String service : expected) if (!service.equals("api-gateway"))
+            assertTrue(found.stream().anyMatch(span -> span.service().equals(service) && span.name().equals("kafka.consume")), service);
+        var ids = found.stream().map(OtlpCapture.ExportedSpan::spanId).collect(java.util.stream.Collectors.toSet());
+        assertTrue(found.stream().filter(span -> span.name().equals("kafka.consume")).allMatch(span -> ids.contains(span.parentId())), "Every consumed span must reference an exported producer span");
+        var metrics = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORTS.get("payment-service") + "/actuator/prometheus")).build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, metrics.statusCode()); assertTrue(metrics.body().contains("payments_accepted_total"));
+        assertTrue(metrics.body().contains("messaging_processed_total")); assertFalse(metrics.body().contains(order.id().toString()));
+        assertTrue(Files.readAllLines(logs.resolve("inventory-service.log")).stream()
+                .anyMatch(line -> line.contains(traceId) && line.contains("eventId") && line.contains("spanId")), "Consumer logs must carry trace/span/event context together");
+    }
+    static boolean foundService(OtlpCapture traces, String traceId, String service) {
+        return traces.spans.stream().anyMatch(span -> span.traceId().equals(traceId) && span.service().equals(service) &&
+                span.name().equals(service.equals("api-gateway") ? "http.server" : "kafka.consume"));
     }
 }

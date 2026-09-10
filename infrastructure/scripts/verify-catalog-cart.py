@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise Phase 3 through the real gateway. --outage also stops/restarts the catalog."""
+from demo_token import token
 import argparse
 import base64
 import json
@@ -27,7 +28,7 @@ admin = ('admin', values['DEMO_ADMIN_PASSWORD'])
 def request(method, path, identity=customer, payload=None, status=200):
     headers = {'Content-Type': 'application/json'}
     if identity:
-        headers['Authorization'] = 'Basic ' + base64.b64encode((':'.join(identity)).encode()).decode()
+        headers['Authorization'] = 'Bearer ' + token(identity[0], values['JWT_SECRET'])
     req = urllib.request.Request(base + path, method=method, headers=headers,
                                  data=None if payload is None else json.dumps(payload).encode())
     try:

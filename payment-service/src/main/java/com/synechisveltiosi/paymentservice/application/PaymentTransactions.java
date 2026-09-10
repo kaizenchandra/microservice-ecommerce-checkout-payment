@@ -78,7 +78,9 @@ public class PaymentTransactions {
         int inserted = jdbc.update("""
                 INSERT INTO payment(payment_id, customer_id, request_hash, input_event)
                 VALUES (?, ?, ?, CAST(? AS jsonb)) ON CONFLICT DO NOTHING
-                """, input.orderId(), input.customerId(), hash, json.writeValueAsString(event));
+                """, input.orderId(), input.customerId(), hash, json.writeValueAsString(new EventEnvelope<>(event.eventId(), event.eventType(), event.correlationId(), event.causationId(),
+                        event.aggregateType(), event.aggregateId(), event.aggregateVersion(), event.occurredAt(), event.schemaVersion(),
+                        com.synechisveltiosi.paymentservice.infrastructure.Telemetry.currentTraceparentOr(event.traceparent()), event.payload())));
         if (inserted == 0 && !hash.equals(jdbc.queryForObject("SELECT request_hash FROM payment WHERE payment_id = ?", String.class, input.orderId())))
             throw conflict("PAYMENT_CONFLICT", "Order already has different payment instructions");
         if (inserted == 1) afterCommit(() -> metrics.counter("payments.accepted").increment());

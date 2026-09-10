@@ -2,7 +2,7 @@
   "uid": "checkout-platform",
   "title": "Checkout Platform",
   "schemaVersion": 40,
-  "version": 1,
+  "version": 2,
   "refresh": "15s",
   "time": {
     "from": "now-15m",
@@ -94,6 +94,94 @@
           "refId": "A",
           "expr": "sum by (service) (rate(http_server_requests_seconds_count{status=~\"5..\"}[5m]))",
           "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Business throughput",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application, __name__) (rate({__name__=~\"orders_created_total|inventory_reservations_accepted_total|payments_accepted_total\"}[5m]))",
+          "legendFormat": "{{application}} {{__name__}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Payment outcomes",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (__name__) (rate({__name__=~\"payments_completed_total|payments_declined_total|payments_recovery_deferred_total\"}[5m]))",
+          "legendFormat": "{{__name__}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Listener attempts",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application, outcome) (rate(messaging_processed_total[5m]))",
+          "legendFormat": "{{application}} {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Dead-letter recovery",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (application, __name__) (rate({__name__=~\"consumer_dlt_published_total|consumer_dlt_failures_total\"}[5m]))",
+          "legendFormat": "{{application}} {{__name__}}"
         }
       ]
     }

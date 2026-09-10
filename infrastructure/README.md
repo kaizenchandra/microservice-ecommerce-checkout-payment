@@ -134,7 +134,7 @@ infrastructure. Payment/idempotency and inventory truth must remain in PostgreSQ
 The collector has a memory limiter, bounded batch queue and bounded retry to Tempo.
 Its queue is in memory and can lose spans on restart or after the retry budget; this
 is telemetry infrastructure, never a reliable business event transport. Tempo persists
-traces in its own volume. Actual Java/Kafka instrumentation belongs to Phase 11.
+traces in its own volume. Explicit Java HTTP/Kafka instrumentation is implemented in [Phase 11](../docs/phase-11-security-observability.md).
 
 ## Observe and verify
 
@@ -161,7 +161,7 @@ The smoke test verifies:
 
 The only retained test data is Kafka smoke records and short-lived synthetic traces.
 No business tables or sample customer data are created. The Grafana `Checkout Platform`
-dashboard displays actual JVM/HTTP metrics; business counters arrive with business code.
+dashboard displays actual JVM/HTTP metrics; business panels include committed outcomes, listener attempts and DLT recovery.
 Prometheus evaluates `ApplicationUnavailable` after two minutes; no Alertmanager or
 external message delivery is configured.
 

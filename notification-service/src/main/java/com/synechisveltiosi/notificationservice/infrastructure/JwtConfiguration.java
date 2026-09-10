@@ -21,7 +21,8 @@ public class JwtConfiguration {
         var decoder = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"))
                 .macAlgorithm(MacAlgorithm.HS256).build();
         OAuth2TokenValidator<Jwt> claims = jwt -> {
-            boolean valid = jwt.getAudience().contains(audience) && jwt.getExpiresAt() != null && jwt.getIssuedAt() != null
+            try {
+            boolean valid = jwt.getAudience() != null && jwt.getAudience().contains(audience) && jwt.getExpiresAt() != null && jwt.getIssuedAt() != null
                     && jwt.getIssuedAt().isBefore(Instant.now().plusSeconds(30))
                     && jwt.getExpiresAt().isAfter(jwt.getIssuedAt())
                     && !jwt.getExpiresAt().isAfter(jwt.getIssuedAt().plusSeconds(3600));
@@ -36,6 +37,7 @@ public class JwtConfiguration {
                 else valid = false;
             }
             return valid ? OAuth2TokenValidatorResult.success() : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Invalid token claims", null));
+            } catch (RuntimeException error) { return OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Invalid token claims", null)); }
         };
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(new JwtTimestampValidator(Duration.ofSeconds(30)), new JwtIssuerValidator(issuer), claims));
         return decoder;

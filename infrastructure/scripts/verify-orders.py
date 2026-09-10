@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify Phase 4 through the gateway; retain one synthetic append-only order."""
+from demo_token import token
 import base64
 import json
 import os
@@ -24,7 +25,7 @@ key, order_id = str(uuid.uuid4()), str(uuid.uuid4())
 def request(method, path, identity=customer, payload=None, status=200):
     headers = {'Content-Type': 'application/json', 'Idempotency-Key': key}
     if identity:
-        headers['Authorization'] = 'Basic ' + base64.b64encode(':'.join(identity).encode()).decode()
+        headers['Authorization'] = 'Bearer ' + token(identity[0], values['JWT_SECRET'])
     req = urllib.request.Request(base + path, method=method, headers=headers,
                                  data=None if payload is None else json.dumps(payload).encode())
     try:

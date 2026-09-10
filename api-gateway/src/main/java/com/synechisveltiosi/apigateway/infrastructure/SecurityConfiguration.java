@@ -4,6 +4,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.*;
 @Configuration
+@org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication(type = org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication.Type.SERVLET)
 public class SecurityConfiguration {
     private AuthenticationEntryPoint problemAuthenticationEntryPoint() {
         return (request, response, failure) -> { response.setStatus(401); response.setHeader("WWW-Authenticate", "Bearer");
