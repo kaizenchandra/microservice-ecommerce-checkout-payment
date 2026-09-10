@@ -20,9 +20,11 @@ python3 infrastructure/scripts/verify.py --apps
 ```
 
 The initializer creates an ignored `.env` with random independent credentials and mode
-0600. Existing values in `.env` are never overwritten; missing template keys are appended. Compose refuses to start with missing/empty
-passwords. `.env.example` documents names without containing working credentials.
-Use your local `.env` to find the Grafana admin password; no token issuer exists yet.
+
+0600. Existing values in `.env` are never overwritten; missing template keys are appended. Compose refuses to start with
+      missing/empty
+      passwords. `.env.example` documents names without containing working credentials.
+      Use your local `.env` to find the Grafana admin password; no token issuer exists yet.
 
 All image versions are pinned in Compose/Dockerfiles. Each application uses a multi-stage
 Maven/Java 21 build. BuildKit shares the identical reactor build layer across the ten
@@ -63,20 +65,21 @@ infrastructure/
 
 ## Network and ownership
 
-| Component | Host endpoint (loopback only) | Container endpoint |
-|---|---|---|
-| Gateway foundation | http://localhost:8080/actuator/health | api-gateway:8080 |
-| PostgreSQL | localhost:5432 | postgres:5432 |
-| Kafka | localhost:9092 | kafka:19092 |
-| Redis | localhost:6379 | redis:6379 |
-| Kafka UI (read-only) | http://localhost:8090 | kafka-ui:8080 |
-| Prometheus | http://localhost:9090 | prometheus:9090 |
-| Grafana | http://localhost:3000 | grafana:3000 |
-| OTLP gRPC / HTTP | localhost:4317 / localhost:4318 | otel-collector:4317 / :4318 |
-| Tempo | internal only | tempo:3200 |
+| Component            | Host endpoint (loopback only)         | Container endpoint          |
+|----------------------|---------------------------------------|-----------------------------|
+| Gateway foundation   | http://localhost:8080/actuator/health | api-gateway:8080            |
+| PostgreSQL           | localhost:5432                        | postgres:5432               |
+| Kafka                | localhost:9092                        | kafka:19092                 |
+| Redis                | localhost:6379                        | redis:6379                  |
+| Kafka UI (read-only) | http://localhost:8090                 | kafka-ui:8080               |
+| Prometheus           | http://localhost:9090                 | prometheus:9090             |
+| Grafana              | http://localhost:3000                 | grafana:3000                |
+| OTLP gRPC / HTTP     | localhost:4317 / localhost:4318       | otel-collector:4317 / :4318 |
+| Tempo                | internal only                         | tempo:3200                  |
 
 Port overrides are documented in `.env.example`. Other application ports are internal;
-inspect their health with Compose exec or Prometheus. The gateway routes product/cart APIs from Phase 3. Infrastructure protocols are local development plaintext; loopback
+inspect their health with Compose exec or Prometheus. The gateway routes product/cart APIs from Phase 3. Infrastructure
+protocols are local development plaintext; loopback
 bindings do not constitute production TLS or Kafka ACLs.
 
 Nine databases use `<domain>_db` and `<domain>_owner` for product, cart, checkout, order,
@@ -107,8 +110,9 @@ Automatic topic creation is disabled to catch naming mistakes.
 Replication factor and minimum ISR are one for this single-broker demo. `acks=all`
 therefore acknowledges one replica, not redundant durability. Kafka ordering applies
 within a topic partition; equal order keys across topics do not establish total order.
-Retry/DLT topics will be provisioned with consumer-specific policies in Phase 10;
-creating unused retry topics here would not demonstrate retry behavior.
+Consumer-specific DLT topics are provisioned by the initializer and application KafkaAdmin.
+See [Phase 10 recovery](../docs/phase-10-resilience.md) for bounded listener retries,
+retention, acknowledgment guarantees and the dry-run-first redrive command.
 
 ## Readiness and failure behavior
 
@@ -169,8 +173,8 @@ docker compose up -d --wait         # resume existing stack
 docker compose down                # remove containers/network, keep named volumes
 ```
 
-Do not delete volumes to handle ordinary failures. `docker compose down -v` is a
-**destructive reset** of databases, Kafka events, dashboards and telemetry; use it only
+Do not delete volumes to handle ordinary failures. `docker compose down -v` is a **destructive reset** of databases,
+Kafka events, dashboards and telemetry; use it only
 when intentionally discarding this demo's data. Changing `.env` passwords does not rotate
 persisted database roles or Grafana accounts. Coordinate credential rotation with those
 systems; do not regenerate `.env` against existing data and expect it to update logins.
@@ -198,7 +202,8 @@ state but do not implement recovery of business operations.
 
 * [Apache Kafka Docker guide](https://kafka.apache.org/40/getting-started/docker/) for the official KRaft image.
 * [Kafbat UI](https://github.com/kafbat/kafka-ui) for the maintained Kafka management UI.
-* [Tempo local deployment](https://grafana.com/docs/tempo/latest/set-up-for-tracing/setup-tempo/deploy/locally/) for a monolithic development trace store.
+* [Tempo local deployment](https://grafana.com/docs/tempo/latest/set-up-for-tracing/setup-tempo/deploy/locally/) for a
+  monolithic development trace store.
 
 Version compatibility is validated with the pinned images in this project; these are
 a reproducible demo selection, not a promise that the pins are the newest releases.

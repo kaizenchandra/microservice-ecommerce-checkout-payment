@@ -23,6 +23,16 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
         max.poll.records: 10
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 1
+        max.block.ms: 1000
+        request.timeout.ms: 2000
+        delivery.timeout.ms: 4000
     listener:
       ack-mode: record
       auto-startup: ${QUERY_LISTENER_ENABLED:true}

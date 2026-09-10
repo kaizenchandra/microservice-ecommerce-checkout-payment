@@ -299,4 +299,63 @@ class SagaIT {
 
     record Order(UUID id, UUID product) {
     }
+    @Test
+    void failedProjectionIsDeadLetteredAndRedrivenWithoutRepeatingBusinessEffects() throws Exception {
+        var props = new Properties(); props.put("bootstrap.servers", KAFKA.getBootstrapServers());
+        props.put("enable.auto.commit", "false"); props.put("auto.offset.reset", "earliest");
+        String topic = "order.events.order-query-service.DLT";
+        try (var consumer = new org.apache.kafka.clients.consumer.KafkaConsumer<String, String>(props,
+                new org.apache.kafka.common.serialization.StringDeserializer(), new org.apache.kafka.common.serialization.StringDeserializer());
+             var connection = DriverManager.getConnection(database("query"), DB.getUsername(), DB.getPassword());
+             var statement = connection.createStatement()) {
+            var partitions = List.of(new org.apache.kafka.common.TopicPartition(topic, 0), new org.apache.kafka.common.TopicPartition(topic, 1), new org.apache.kafka.common.TopicPartition(topic, 2));
+            consumer.assign(partitions); consumer.seekToEnd(partitions);
+            for (var partition : partitions) consumer.position(partition);
+            // A temporary database fault is isolated to the query projection.
+            statement.execute("ALTER TABLE order_projection ADD CONSTRAINT test_dlt_failure CHECK (false) NOT VALID");
+            Order order;
+            org.apache.kafka.clients.consumer.ConsumerRecord<String, String> dead = null;
+            try {
+                order = create("tok_success", "US", "12345", 1);
+                awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED");
+                long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+                while (dead == null && System.nanoTime() < deadline) {
+                    for (var record : consumer.poll(Duration.ofMillis(250)))
+                        if (order.id().toString().equals(record.key()) && JSON.readTree(record.value()).get("eventType").asString().equals("OrderCreated")) dead = record;
+                }
+                assertNotNull(dead, "Failed projection must reach its own DLT");
+            } finally { statement.execute("ALTER TABLE order_projection DROP CONSTRAINT test_dlt_failure"); }
+            String original = dead.value();
+            var sourcePosition = new org.apache.kafka.common.TopicPartition("order.events", dead.partition());
+            consumer.assign(List.of(sourcePosition)); consumer.seekToEnd(List.of(sourcePosition)); consumer.position(sourcePosition);
+            for (boolean execute : List.of(false, true)) {
+                var command = new ArrayList<>(List.of("python3", "../infrastructure/scripts/redrive.py", KAFKA.getBootstrapServers(), topic,
+                        Integer.toString(dead.partition()), Long.toString(dead.offset())));
+                if (execute) command.add("--execute");
+                Path log = logs.resolve("redrive-" + execute + ".log");
+                var process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+                try { assertTrue(process.waitFor(60, TimeUnit.SECONDS)); assertEquals(0, process.exitValue(), Files.readString(log)); }
+                finally { if (process.isAlive()) process.destroyForcibly(); }
+                if (!execute) assertEquals(0, scalar("query", "SELECT count(*) FROM order_projection WHERE order_id = ?", order.id()));
+                else {
+                    org.apache.kafka.clients.consumer.ConsumerRecord<String, String> replayed = null;
+                    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+                    while (replayed == null && System.nanoTime() < deadline)
+                        for (var record : consumer.poll(Duration.ofMillis(250)))
+                            if (dead.key().equals(record.key()) && JSON.readTree(record.value()).get("eventId").equals(JSON.readTree(original).get("eventId"))) replayed = record;
+                    assertNotNull(replayed); assertEquals(original, replayed.value()); assertEquals(dead.key(), replayed.key());
+                }
+            }
+            // Replay other query DLT facts too; gaps are deliberately preserved until recovery.
+            replayOutbox("order", order.id(), "order.events");
+            replayOutbox("inventory", order.id(), "inventory.events");
+            replayOutbox("payment", order.id(), "payment.events");
+            replayOutbox("shipping", order.id(), "shipping.events");
+            replayOutbox("notification", order.id(), "notification.events");
+            assertEquals("COMPLETED", awaitView(order, "COMPLETED").get("status").asString());
+            assertEquals(1, scalar("payment", "SELECT charge_count FROM provider_charge WHERE payment_id = ?", order.id()));
+            assertEquals(1, scalar("notification", "SELECT count(*) FROM notification WHERE order_id = ?", order.id()));
+            assertEquals(order.id().toString(), JSON.readTree(original).get("aggregateId").asString());
+        }
+    }
 }

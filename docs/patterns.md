@@ -2,18 +2,18 @@
 
 Locations below describe the implementation plan. README tracks what exists today.
 
-| Pattern | Problem and planned location | Why needed | Does not solve / common misuse |
-|---|---|---|---|
-| Saga | Local steps in Order, Inventory, Payment, Shipping | Complete or compensate a workflow across owners | No global rollback or isolation; cancellation before refund/release is incorrect |
-| Outbox | State plus publication intent in each event-producing database | Survive the DB/Kafka dual-write crash window | Does not eliminate duplicates; publishing only after commit without durable intent loses events |
-| Event sourcing | Order state reconstructed from its append-only domain_event stream | Explain and replay business history | Not a Kafka topic or audit table alongside an authoritative mutable row |
-| CQRS | Commands in Order, materialized reads in Query | Optimize reads independently and avoid request fan-out | Does not require event sourcing or guarantee immediate freshness |
-| Aggregator | Query details endpoint calls Payment, Inventory, Shipping | Combine owner responses on demand | Does not create a transactionally consistent snapshot; unrestricted fan-out worsens availability |
-| Circuit breaker | Checkout product lookup | Stop pressure on a failing dependency | Does not retry; an open circuit must not manufacture authoritative prices |
-| Retry | Transient HTTP, publication and consumption failures | Recover from temporary problems | Cannot fix a decline or malformed event; nested retries cause retry storms |
-| Idempotency | Checkout/payment command keys, per-service consumer inboxes | Make repetitions safe | Event ID deduplication alone misses two distinct events requesting the same charge |
-| Local transaction | Each application service writes its own database | Atomic business change, inbox marker and outbox insertion | An annotation cannot span remote services; network calls inside transactions hold locks |
-| Optimistic locking | Versioned inventory rows and order event versions | Detect lost updates without serializing every reader | Conflict retry must re-read and recheck business invariants |
+| Pattern            | Problem and planned location                                       | Why needed                                                | Does not solve / common misuse                                                                   |
+|--------------------|--------------------------------------------------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| Saga               | Local steps in Order, Inventory, Payment, Shipping                 | Complete or compensate a workflow across owners           | No global rollback or isolation; cancellation before refund/release is incorrect                 |
+| Outbox             | State plus publication intent in each event-producing database     | Survive the DB/Kafka dual-write crash window              | Does not eliminate duplicates; publishing only after commit without durable intent loses events  |
+| Event sourcing     | Order state reconstructed from its append-only domain_event stream | Explain and replay business history                       | Not a Kafka topic or audit table alongside an authoritative mutable row                          |
+| CQRS               | Commands in Order, materialized reads in Query                     | Optimize reads independently and avoid request fan-out    | Does not require event sourcing or guarantee immediate freshness                                 |
+| Aggregator         | Query details endpoint calls Payment, Inventory, Shipping          | Combine owner responses on demand                         | Does not create a transactionally consistent snapshot; unrestricted fan-out worsens availability |
+| Circuit breaker    | Cart catalog and query owner lookups                                            | Stop pressure on a failing dependency                     | Does not retry; an open circuit must not manufacture authoritative prices                        |
+| Retry              | Transient HTTP, publication and consumption failures               | Recover from temporary problems                           | Cannot fix a decline or malformed event; nested retries cause retry storms                       |
+| Idempotency        | Checkout/payment command keys, per-service consumer inboxes        | Make repetitions safe                                     | Event ID deduplication alone misses two distinct events requesting the same charge               |
+| Local transaction  | Each application service writes its own database                   | Atomic business change, inbox marker and outbox insertion | An annotation cannot span remote services; network calls inside transactions hold locks          |
+| Optimistic locking | Versioned inventory rows and order event versions                  | Detect lost updates without serializing every reader      | Conflict retry must re-read and recheck business invariants                                      |
 
 ## Interview questions and strong answers
 

@@ -1,7 +1,7 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–9 are implemented, including event-sourced orders and a complete simulated
+the requested thirteen phases. **Phases 1–10 are implemented, including event-sourced orders and a complete simulated
 checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
@@ -32,6 +32,8 @@ shipping, simulated notifications and isolated end-to-end tests.
 See [Phase 8: CQRS projection](docs/phase-8-projection.md) for query APIs and rebuilds.
 See [Phase 9: Order details composition](docs/phase-9-composition.md) for owner lookups,
 partial availability and customer access controls.
+See [Phase 10: Resilience](docs/phase-10-resilience.md) for circuit breakers, bounded
+consumer retries, dead-letter topics and controlled redrive.
 
 ## Current directory structure
 
@@ -138,8 +140,8 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 7     | Choreography, shipping, notifications and compensation                                   | Implemented |
 | 8     | CQRS projection and rebuild                                                              | Implemented |
 | 9     | Order details composition                                                                | Implemented |
-| 10    | Resilience, retries, DLT and failure controls                                            | Next        |
-| 11    | JWT and end-to-end tracing / business metrics                                            | Pending     |
+| 10    | Resilience, retries, DLT and failure controls                                            | Implemented |
+| 11    | JWT and end-to-end tracing / business metrics                                            | Next        |
 | 12    | Integration, API, messaging, concurrency and saga tests                                  | Pending     |
 | 13    | Executable full walkthrough, operational recovery and final documentation                | Pending     |
 
@@ -268,3 +270,12 @@ passed, including packaged-service gateway checks. Together with the preceding r
 unaffected modules, current reports contain 73 tests, zero failures, errors or skips.
 Compose configuration and whitespace checks passed. Phase 9 is not yet deployed to the
 shared Compose stack.
+
+## Phase 10 verification record
+
+Circuit breakers, bounded consumer retries and dead-letter recovery are implemented.
+Java 21 `mvn -o verify` passed all 13 reactor modules: 80 tests, zero failures, errors
+or skips. Tests include actual dead-letter recovery and dry-run/execute redrive through
+the packaged-service saga suite. Compose configuration, script syntax and whitespace
+checks passed. See [Resilience and recovery](docs/phase-10-resilience.md).
+Phase 10 has not been deployed to the shared Compose stack.

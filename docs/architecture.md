@@ -1,12 +1,13 @@
 # Phase 1 — architecture and implementation contract
 
-Status: phases 1–9 are implemented, including product/cart APIs, event-sourced orders,
+Status: phases 1–10 are implemented, including product/cart APIs, event-sourced orders,
 transactional outbox publication, reservations, simulated payments/refunds, shipping,
 compensation, notifications, CQRS projections, rebuilds and gateway routing. See [Phase 3](phase-3-product-cart.md),
 [Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md), [Phase 7](phase-7-saga.md), [Phase 8](phase-8-projection.md)
 and
 [infrastructure](../infrastructure/README.md). The saga workflows below are implemented; remote order-details
 composition is implemented in [Phase 9](phase-9-composition.md).
+Circuit breakers and consumer dead-letter recovery are implemented in [Phase 10](phase-10-resilience.md).
 Checkout orchestration remains work for later phases.
 
 ## Ownership and boundaries

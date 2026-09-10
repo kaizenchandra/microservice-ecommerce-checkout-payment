@@ -171,4 +171,24 @@ class OrderDetailsClientTest {
         assertThrows(ApiException.class, () -> controller.details(order, auth, new MockHttpServletRequest()));
         verifyNoInteractions(remote);
     }
+    @Test void circuitOpensWithoutAffectingHealthyOwnersAndRecoversOnProbe() {
+        endpoint("/api/payments/", 503, "{}"); endpoint("/api/inventory/", 200, body()); endpoint("/api/shipping/", 200, body());
+        client(2000);
+        for (int i = 0; i < 5; i++) assertEquals(UNAVAILABLE, get().payment().availability());
+        var breaker = client.breakers.get(OrderDetailsClient.Payment.class);
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.OPEN, breaker.getState());
+        int before = calls.get(); var blocked = get();
+        assertEquals(UNAVAILABLE, blocked.payment().availability()); assertEquals(AVAILABLE, blocked.shipping().availability());
+        assertEquals(before + 2, calls.get());
+        server.removeContext("/api/payments/"); endpoint("/api/payments/", 200, body());
+        breaker.transitionToHalfOpenState();
+        assertEquals(AVAILABLE, get().payment().availability());
+        assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, breaker.getState());
+    }
+    @Test void missingRecordsDoNotOpenCircuit() {
+        endpoint("/api/payments/", 404, "{}"); endpoint("/api/inventory/", 404, "{}"); endpoint("/api/shipping/", 404, "{}");
+        client(2000);
+        for (int i = 0; i < 7; i++) assertEquals(NOT_FOUND, get().payment().availability());
+        client.breakers.values().forEach(breaker -> assertEquals(io.github.resilience4j.circuitbreaker.CircuitBreaker.State.CLOSED, breaker.getState()));
+    }
 }

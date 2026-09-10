@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import io.github.resilience4j.circuitbreaker.*;
+import java.util.concurrent.Semaphore;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.UUID;
@@ -17,6 +19,13 @@ import java.util.UUID;
 @Component
 public class ProductCatalogClient {
     private final RestClient client;
+    private final Semaphore permits = new Semaphore(24);
+    final CircuitBreaker breaker = CircuitBreaker.of("catalog", CircuitBreakerConfig.custom()
+            .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
+            .waitDurationInOpenState(Duration.ofSeconds(10)).permittedNumberOfCallsInHalfOpenState(1)
+            .ignoreException(error -> error instanceof RestClientResponseException response &&
+                    response.getStatusCode().is4xxClientError() && response.getStatusCode().value() != 429)
+            .build());
 
     public ProductCatalogClient(RestClient.Builder builder, @Value("${catalog.base-url}") String baseUrl) {
         var http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
@@ -26,19 +35,22 @@ public class ProductCatalogClient {
     }
 
     public void requireActive(UUID id, String authorization) {
+        if (!permits.tryAcquire()) throw unavailable();
         CatalogProduct product;
         try {
-            product = client.get().uri("/api/products/{id}", id).header("Authorization", authorization)
-                    .retrieve().body(CatalogProduct.class);
+            product = breaker.executeSupplier(() -> client.get().uri("/api/products/{id}", id).header("Authorization", authorization)
+                    .retrieve().body(CatalogProduct.class));
         } catch (RestClientResponseException error) {
             if (error.getStatusCode().value() == 404) {
                 throw new ApiException(HttpStatus.NOT_FOUND, "PRODUCT_NOT_FOUND", "Product not found");
             }
             throw unavailable();
-        } catch (RestClientException error) {
+        } catch (RestClientException | CallNotPermittedException error) {
+            throw unavailable();
+        } finally { permits.release(); }
+        if (product == null || !id.equals(product.id()) || product.active() == null) {
             throw unavailable();
         }
-        if (product == null || !id.equals(product.id()) || product.active() == null) { throw unavailable(); }
         if (!product.active()) {
             throw new ApiException(HttpStatus.CONFLICT, "PRODUCT_INACTIVE", "Product is not available for purchase");
         }
@@ -49,5 +61,6 @@ public class ProductCatalogClient {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record CatalogProduct(UUID id, Boolean active) { }
+    record CatalogProduct(UUID id, Boolean active) {
+    }
 }

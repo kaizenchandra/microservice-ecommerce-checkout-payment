@@ -10,6 +10,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
+import io.github.resilience4j.circuitbreaker.*;
+import java.util.Map;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.UUID;
@@ -23,6 +25,17 @@ public class OrderDetailsClient {
     // No waiting queue: excess requests receive explicit partial availability.
     private final Semaphore permits;
     private final long timeoutMillis;
+    final Map<Class<?>, CircuitBreaker> breakers = Map.of(
+            Payment.class, breaker("payment"), Inventory.class, breaker("inventory"), Shipping.class, breaker("shipping"));
+
+    private static CircuitBreaker breaker(String name) {
+        return CircuitBreaker.of(name, CircuitBreakerConfig.custom()
+                .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
+                .waitDurationInOpenState(Duration.ofSeconds(10)).permittedNumberOfCallsInHalfOpenState(1)
+                .ignoreException(error -> error instanceof RestClientResponseException response &&
+                        response.getStatusCode().is4xxClientError() && response.getStatusCode().value() != 429)
+                .build());
+    }
 
     public OrderDetailsClient(RestClient.Builder builder,
                               @Value("${details.payment-url:http://localhost:8086}") String paymentUrl,
@@ -85,7 +98,7 @@ public class OrderDetailsClient {
                     var request = client.get().uri(path + view.orderId() + (type == Payment.class ? "" : "/details")).header("Authorization", authorization)
                             .header("X-Correlation-ID", correlation);
                     if (traceparent != null) request.header("traceparent", traceparent);
-                    T data = request.retrieve().body(type);
+                    T data = breakers.get(type).executeSupplier(() -> request.retrieve().body(type));
                     boolean valid = switch (data) {
                         case Payment p -> matches(view, p.orderId(), p.customerId(), p.status());
                         case Inventory i -> matches(view, i.orderId(), i.customerId(), i.status());
@@ -95,7 +108,7 @@ public class OrderDetailsClient {
                     return valid ? new Part<>(Availability.AVAILABLE, data) : unavailable();
                 } catch (RestClientResponseException error) {
                     return new Part<T>(error.getStatusCode().value() == 404 ? Availability.NOT_FOUND : Availability.UNAVAILABLE, null);
-                } catch (RestClientException | IllegalArgumentException error) {
+                } catch (RestClientException | IllegalArgumentException | CallNotPermittedException error) {
                     return unavailable();
                 } finally {
                     permits.release();
