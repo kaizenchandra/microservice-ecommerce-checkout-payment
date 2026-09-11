@@ -41,3 +41,7 @@ build/
 .mvn/repository/
 .env
 *.log
+
+# Python CLI bytecode
+__pycache__/
+*.py[cod]

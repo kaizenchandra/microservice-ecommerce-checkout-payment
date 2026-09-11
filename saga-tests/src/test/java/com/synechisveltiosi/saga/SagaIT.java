@@ -519,4 +519,29 @@ class SagaIT {
     static int partition(UUID id) {
         return org.apache.kafka.common.utils.Utils.toPositive(org.apache.kafka.common.utils.Utils.murmur2(id.toString().getBytes(StandardCharsets.UTF_8))) % 3;
     }
+    @Test void executableWalkthroughCoversAllFourOutcomes() throws Exception {
+        var builder = new ProcessBuilder("python3", "../infrastructure/scripts/walkthrough.py", "--gateway", gateway,
+                "--scenario", "all", "--timeout", "60");
+        builder.environment().put("JWT_SECRET", JWT_SECRET);
+        builder.environment().put("JWT_ISSUER", "checkout-demo"); builder.environment().put("JWT_AUDIENCE", "ecommerce-api");
+        Path log = logs.resolve("walkthrough.jsonl");
+        var process = builder.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+        try { assertTrue(process.waitFor(300, TimeUnit.SECONDS), "Walkthrough must complete within its scenario budgets");
+            assertEquals(0, process.exitValue(), Files.readString(log)); }
+        finally { if (process.isAlive()) process.destroyForcibly(); }
+        var lines = Files.readAllLines(log); assertEquals(4, lines.size()); var scenarios = new HashSet<String>();
+        for (String line : lines) {
+            var result = JSON.readTree(line); String scenario = result.get("scenario").asString(); scenarios.add(scenario);
+            var id = UUID.fromString(result.get("orderId").asString());
+            assertEquals(scenario.equals("success") ? "COMPLETED" : "CANCELLED", result.get("status").asString());
+            assertTrue(result.get("notified").asBoolean());
+            assertEquals(1, scalar("order", "SELECT count(*) FROM order_command WHERE order_id = ?", id));
+            assertEquals(1, scalar("order", "SELECT count(*) FROM domain_event WHERE aggregate_id = ? AND event_type = 'OrderCreated'", id));
+            assertEquals(1, scalar("notification", "SELECT count(*) FROM notification WHERE order_id = ?", id));
+            assertEquals(Set.of("success", "shipment-refund").contains(scenario) ? 1 : 0,
+                    scalar("payment", "SELECT coalesce(sum(charge_count), 0) FROM provider_charge WHERE payment_id = ?", id));
+            assertFalse(line.contains("tok_success")); assertFalse(line.contains(JWT_SECRET));
+        }
+        assertEquals(Set.of("success", "inventory-rejection", "payment-decline", "shipment-refund"), scenarios);
+    }
 }
