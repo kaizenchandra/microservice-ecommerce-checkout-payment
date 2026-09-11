@@ -37,6 +37,7 @@ class SagaIT {
     static final String CUSTOMER = "11111111-1111-1111-1111-111111111111";
     static final String PASSWORD = "isolated-saga-only";
     static final List<Process> PROCESSES = new ArrayList<>();
+    static final Map<String, Process> SERVICE_PROCESSES = new HashMap<>();
     static final Map<String, Integer> PORTS = new LinkedHashMap<>();
     static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
     @TempDir
@@ -57,7 +58,7 @@ class SagaIT {
             admin.createTopics(List.of("order.events", "inventory.events", "payment.events", "shipping.events", "notification.events").stream()
                     .map(topic -> new org.apache.kafka.clients.admin.NewTopic(topic, 3, (short) 1)).toList()).all().get(20, TimeUnit.SECONDS);
         }
-        for (String service : List.of("order", "inventory", "payment", "shipping", "notification", "query")) {
+        for (String service : List.of("product", "cart", "order", "inventory", "payment", "shipping", "notification", "query")) {
             try (var connection = DriverManager.getConnection(DB.getJdbcUrl(), DB.getUsername(), DB.getPassword()); var statement = connection.createStatement()) {
                 statement.execute("CREATE DATABASE " + service + "_saga");
             }
@@ -73,9 +74,8 @@ class SagaIT {
 
     static void startService(String module, String database) throws Exception {
         int port;
-        try (var socket = new ServerSocket(0)) {
-            port = socket.getLocalPort();
-        }
+        if (PORTS.containsKey(module)) port = PORTS.get(module);
+        else try (var socket = new ServerSocket(0)) { port = socket.getLocalPort(); }
         PORTS.put(module, port);
         var root = Path.of("..").toAbsolutePath().normalize();
         var command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx192m", "-XX:ActiveProcessorCount=2", "-jar",
@@ -85,6 +85,8 @@ class SagaIT {
                 "--demo.auth.second-customer-password=" + PASSWORD, "--demo.auth.admin-password=" + PASSWORD, "--demo.auth.checkout-password=" + PASSWORD));
         if (database != null)
             command.addAll(List.of("--spring.datasource.url=" + database(database), "--spring.datasource.username=" + DB.getUsername(), "--spring.datasource.password=" + DB.getPassword()));
+        if (module.equals("inventory-service")) command.add("--spring.kafka.listener.concurrency=3");
+        if (module.equals("cart-service")) command.add("--catalog.base-url=http://localhost:" + PORTS.get("product-service"));
         if (module.equals("order-query-service")) for (String owner : List.of("payment", "inventory", "shipping"))
             command.add("--details." + owner + "-url=http://localhost:" + PORTS.get(owner + "-service"));
         if (module.equals("api-gateway")) for (var entry : PORTS.entrySet())
@@ -92,7 +94,7 @@ class SagaIT {
                 command.add("--" + entry.getKey().replace("-", "_").toUpperCase(Locale.ROOT) + "_URL=http://localhost:" + entry.getValue());
         Path log = logs.resolve(module + ".log");
         Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        PROCESSES.add(process);
+        PROCESSES.add(process); SERVICE_PROCESSES.put(module, process);
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         while (System.nanoTime() < deadline) {
             if (!process.isAlive()) fail(module + " exited; log: " + log + "\n" + tail(log));
@@ -120,8 +122,11 @@ class SagaIT {
     }
 
     static JsonNode request(String method, String path, String user, Object body, int status) throws Exception {
+        return request(method, path, user, body, status, UUID.randomUUID());
+    }
+    static JsonNode request(String method, String path, String user, Object body, int status, UUID key) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create(gateway + path)).timeout(Duration.ofSeconds(10))
-                .header("Content-Type", "application/json").header("Idempotency-Key", UUID.randomUUID().toString());
+                .header("Content-Type", "application/json").header("Idempotency-Key", key.toString());
         if (user != null)
             builder.header("Authorization", "Bearer " + token(user, JWT_SECRET, "checkout-demo", "ecommerce-api", 900));
         if (traceHeader != null) builder.header("traceparent", traceHeader);
@@ -134,11 +139,15 @@ class SagaIT {
         var product = UUID.randomUUID();
         var order = UUID.randomUUID();
         request("POST", "/api/inventory/stock", "admin", Map.of("productId", product, "onHand", stock), 201);
-        var payload = Map.of("orderId", order, "customerId", CUSTOMER, "cartId", UUID.randomUUID(), "cartVersion", 1,
-                "items", List.of(Map.of("productId", product, "sku", "SAGA-1", "name", "Synthetic saga item", "quantity", 1, "unitPrice", Map.of("amount", "25.00", "currency", "USD"))),
-                "paymentToken", token, "shippingAddress", Map.of("recipient", "Demo Buyer", "line1", "Test Street", "city", "Test City", "postalCode", postal, "country", country));
+        var payload = orderCommand(order, product, token, country, postal);
         request("POST", "/api/orders", "checkout", payload, 202);
         return new Order(order, product);
+    }
+
+    static Map<String, Object> orderCommand(UUID order, UUID product, String token, String country, String postal) {
+        return Map.of("orderId", order, "customerId", CUSTOMER, "cartId", UUID.randomUUID(), "cartVersion", 1,
+                "items", List.of(Map.of("productId", product, "sku", "SAGA-1", "name", "Synthetic saga item", "quantity", 1, "unitPrice", Map.of("amount", "25.00", "currency", "USD"))),
+                "paymentToken", token, "shippingAddress", Map.of("recipient", "Demo Buyer", "line1", "Test Street", "city", "Test City", "postalCode", postal, "country", country));
     }
 
     static JsonNode awaitOrder(Order order, String status) throws Exception {
@@ -421,5 +430,93 @@ class SagaIT {
     static boolean foundService(OtlpCapture traces, String traceId, String service) {
         return traces.spans.stream().anyMatch(span -> span.traceId().equals(traceId) && span.service().equals(service) &&
                 span.name().equals(service.equals("api-gateway") ? "http.server" : "kafka.consume"));
+    }
+    @Test void jwtCatalogCartFlowSurvivesRealCatalogOutageWithoutMutation() throws Exception {
+        var product = request("POST", "/api/products", "admin", Map.of("sku", "P12-" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT),
+                "name", "Phase 12 fixture", "description", "Isolated catalog fixture", "price", Map.of("amount", "12.50", "currency", "USD")), 201);
+        String productId = product.get("id").asString();
+        var cart = request("POST", "/api/carts", CUSTOMER, null, 201);
+        String path = "/api/carts/" + cart.get("id").asString();
+        request("GET", path, null, null, 401);
+        request("GET", path, "22222222-2222-2222-2222-222222222222", null, 404);
+        var add = Map.of("productId", productId, "quantity", 1, "expectedVersion", cart.get("version").asLong());
+        request("POST", path + "/items", "22222222-2222-2222-2222-222222222222", add, 404);
+        var before = request("POST", path + "/items", CUSTOMER, add, 200);
+        var next = Map.of("productId", productId, "quantity", 1, "expectedVersion", before.get("version").asLong());
+        var catalog = SERVICE_PROCESSES.get("product-service");
+        catalog.destroy();
+        try {
+            assertTrue(catalog.waitFor(15, TimeUnit.SECONDS), "Catalog must stop before the outage assertion");
+            request("POST", path + "/items", CUSTOMER, next, 503);
+            assertEquals(before, request("GET", path, CUSTOMER, null, 200));
+        } finally {
+            if (catalog.isAlive()) { catalog.destroyForcibly(); assertTrue(catalog.waitFor(5, TimeUnit.SECONDS)); }
+            startService("product-service", "product");
+        }
+        var recovered = request("POST", path + "/items", CUSTOMER, next, 200);
+        assertEquals(2, recovered.get("items").get(0).get("quantity").asInt());
+        assertEquals(before.get("version").asLong() + 1, recovered.get("version").asLong());
+        request("POST", path + "/items", CUSTOMER, next, 409);
+        assertEquals(recovered, request("GET", path, CUSTOMER, null, 200));
+    }
+
+    @Test void concurrentGatewayRetriesCreateOneOrderAndOneCharge() throws Exception {
+        var order = new Order(UUID.randomUUID(), UUID.randomUUID()); var key = UUID.randomUUID();
+        request("POST", "/api/inventory/stock", "admin", Map.of("productId", order.product(), "onHand", 1), 201);
+        var command = orderCommand(order.id(), order.product(), "tok_success", "US", "12345");
+        var ready = new java.util.concurrent.CountDownLatch(6); var go = new java.util.concurrent.CountDownLatch(1);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var results = new ArrayList<java.util.concurrent.Future<JsonNode>>();
+            for (int i = 0; i < 6; i++) results.add(executor.submit(() -> {
+                ready.countDown(); assertTrue(go.await(5, TimeUnit.SECONDS));
+                return request("POST", "/api/orders", "checkout", command, 202, key);
+            }));
+            try { assertTrue(ready.await(5, TimeUnit.SECONDS)); } finally { go.countDown(); }
+            JsonNode first = results.getFirst().get(15, TimeUnit.SECONDS);
+            for (var result : results) assertEquals(first, result.get(15, TimeUnit.SECONDS));
+        }
+        awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED");
+        assertEquals(1, scalar("order", "SELECT count(*) FROM order_command WHERE order_id = ?", order.id()));
+        assertEquals(1, scalar("order", "SELECT count(*) FROM domain_event WHERE aggregate_id = ? AND event_type = 'OrderCreated'", order.id()));
+        assertEquals(1, scalar("payment", "SELECT charge_count FROM provider_charge WHERE payment_id = ?", order.id()));
+        var changed = new HashMap<>(command); changed.put("cartVersion", 2);
+        request("POST", "/api/orders", "checkout", changed, 409, key);
+        assertEquals(1, scalar("payment", "SELECT charge_count FROM provider_charge WHERE payment_id = ?", order.id()));
+    }
+
+    @Test void concurrentOrdersForLastUnitProduceOneCompletionAndOneRejection() throws Exception {
+        var product = UUID.randomUUID(); var a = new Order(UUID.randomUUID(), product);
+        UUID second;
+        do { second = UUID.randomUUID(); } while (partition(a.id()) == partition(second));
+        var b = new Order(second, product);
+        request("POST", "/api/inventory/stock", "admin", Map.of("productId", product, "onHand", 1), 201);
+        var ready = new java.util.concurrent.CountDownLatch(2); var go = new java.util.concurrent.CountDownLatch(1);
+        try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+            var results = new ArrayList<java.util.concurrent.Future<JsonNode>>();
+            for (var order : List.of(a, b)) results.add(executor.submit(() -> {
+                ready.countDown(); assertTrue(go.await(5, TimeUnit.SECONDS));
+                return request("POST", "/api/orders", "checkout", orderCommand(order.id(), product, "tok_success", "US", "12345"), 202);
+            }));
+            try { assertTrue(ready.await(5, TimeUnit.SECONDS)); } finally { go.countDown(); }
+            for (var result : results) result.get(15, TimeUnit.SECONDS);
+        }
+        var outcomes = new ArrayList<String>(); long charges = 0;
+        for (var order : List.of(a, b)) {
+            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos(); String outcome;
+            do {
+                outcome = request("GET", "/api/orders/" + order.id(), CUSTOMER, null, 200).get("status").asString();
+                if (Set.of("COMPLETED", "CANCELLED").contains(outcome)) break;
+                assertTrue(System.nanoTime() < deadline, "Competing order must finish"); Thread.sleep(100);
+            } while (true);
+            outcomes.add(outcome); awaitNotification(order, outcome); awaitView(order, outcome);
+            charges += scalar("payment", "SELECT coalesce(sum(charge_count), 0) FROM provider_charge WHERE payment_id = ?", order.id());
+        }
+        assertEquals(1, Collections.frequency(outcomes, "COMPLETED")); assertEquals(1, Collections.frequency(outcomes, "CANCELLED"));
+        assertEquals(1, charges);
+        var stock = request("GET", "/api/inventory/stock/" + product, "admin", null, 200);
+        assertEquals(1, stock.get("reserved").asInt()); assertEquals(0, stock.get("available").asInt());
+    }
+    static int partition(UUID id) {
+        return org.apache.kafka.common.utils.Utils.toPositive(org.apache.kafka.common.utils.Utils.murmur2(id.toString().getBytes(StandardCharsets.UTF_8))) % 3;
     }
 }

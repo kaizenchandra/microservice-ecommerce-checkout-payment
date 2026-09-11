@@ -1,7 +1,7 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–11 are implemented, including event-sourced orders and a complete simulated
+the requested thirteen phases. **Phases 1–12 are implemented, including event-sourced orders and a complete simulated
 checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
@@ -36,6 +36,8 @@ See [Phase 10: Resilience](docs/phase-10-resilience.md) for circuit breakers, bo
 consumer retries, dead-letter topics and controlled redrive.
 See [Phase 11: Security and observability](docs/phase-11-security-observability.md)
 for JWTs, HTTP/Kafka traces and business metrics.
+See [Phase 12: Integrated verification](docs/phase-12-verification.md) for the coverage
+map, isolated test setup and packaged concurrency/outage scenarios.
 
 ## Current directory structure
 
@@ -145,8 +147,8 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 9     | Order details composition                                                                | Implemented |
 | 10    | Resilience, retries, DLT and failure controls                                            | Implemented |
 | 11    | JWT and end-to-end tracing / business metrics                                            | Implemented |
-| 12    | Integration, API, messaging, concurrency and saga tests                                  | Next        |
-| 13    | Executable full walkthrough, operational recovery and final documentation                | Pending     |
+| 12    | Integration, API, messaging, concurrency and saga tests                                  | Implemented |
+| 13    | Executable full walkthrough, operational recovery and final documentation                | Next        |
 
 End-to-end curl examples will be added with working APIs so the walkthrough remains
 executable. The final target is `docker compose up -d --build` plus `./mvnw clean verify`.
@@ -292,3 +294,14 @@ business metrics and replay trace-context fallback. Compose configuration, scrip
 syntax and whitespace checks passed. Dashboard outcome queries now retain separate
 series and explicit legends. See [Phase 11](docs/phase-11-security-observability.md).
 Phase 11 has not been deployed to the shared Compose stack.
+
+## Phase 12 verification record
+
+Java 21 `mvn -o verify` passed all 13 reactor modules: 89 tests, zero failures, errors
+or skips. All 12 packaged-service scenarios passed using isolated PostgreSQL/Kafka and
+nine application jars. New checks cover JWT product/cart operations, actual catalog
+outage/restart with cart preservation, six concurrent retries of one order command,
+and two orders competing for the last unit through separate Kafka partitions.
+Compose configuration, shell/Python syntax, dashboard JSON and whitespace checks
+passed. See [Integrated verification](docs/phase-12-verification.md) for coverage and
+limits. Checkout HTTP orchestration remains absent; shared-stack deployment is separate.
