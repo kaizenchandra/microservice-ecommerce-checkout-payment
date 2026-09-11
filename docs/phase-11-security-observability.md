@@ -103,7 +103,11 @@ A local OTLP receiver decodes exported spans and checks the trace across seven s
 consumer-to-producer parent links, correlated ECS logs and bounded business metrics.
 Scope tests check that trace and MDC state are restored after nested work.
 
-Verification is in progress. Phase 11 has not been deployed to the shared Compose stack.
+Java 21 `mvn -o verify` passed all 13 reactor modules: 86 tests with zero failures,
+errors or skips. Compose configuration, script syntax and whitespace checks passed.
+Dashboard outcome counters use separate queries and explicit legends to keep success,
+failure and deferred-work series distinct. Phase 11 has not been deployed to the
+shared Compose stack.
 
 Implementation references: [Spring Security JWT validation](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
 and [OpenTelemetry Java SDK](https://opentelemetry.io/docs/languages/java/sdk/).

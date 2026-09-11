@@ -1,7 +1,7 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–10 are implemented, including event-sourced orders and a complete simulated
+the requested thirteen phases. **Phases 1–11 are implemented, including event-sourced orders and a complete simulated
 checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
@@ -144,8 +144,8 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 8     | CQRS projection and rebuild                                                              | Implemented |
 | 9     | Order details composition                                                                | Implemented |
 | 10    | Resilience, retries, DLT and failure controls                                            | Implemented |
-| 11    | JWT and end-to-end tracing / business metrics                                            | Next        |
-| 12    | Integration, API, messaging, concurrency and saga tests                                  | Pending     |
+| 11    | JWT and end-to-end tracing / business metrics                                            | Implemented |
+| 12    | Integration, API, messaging, concurrency and saga tests                                  | Next        |
 | 13    | Executable full walkthrough, operational recovery and final documentation                | Pending     |
 
 End-to-end curl examples will be added with working APIs so the walkthrough remains
@@ -285,5 +285,10 @@ Phase 10 has not been deployed to the shared Compose stack.
 
 ## Phase 11 verification record
 
-JWT validation and explicit HTTP/Kafka tracing are implemented. Verification is in
-progress; Phase 11 has not been deployed to the shared Compose stack.
+Java 21 `mvn -o verify` passed all 13 reactor modules: 86 tests, zero failures, errors
+or skips. Verification includes JWT-authorized saga workflows, the Python token issuer,
+exported HTTP/Kafka trace parent links across seven services, correlated ECS logs,
+business metrics and replay trace-context fallback. Compose configuration, script
+syntax and whitespace checks passed. Dashboard outcome queries now retain separate
+series and explicit legends. See [Phase 11](docs/phase-11-security-observability.md).
+Phase 11 has not been deployed to the shared Compose stack.

@@ -1,6 +1,6 @@
 # Phase 1 — architecture and implementation contract
 
-Status: phases 1–10 are implemented, including product/cart APIs, event-sourced orders,
+Status: phases 1–11 are implemented, including product/cart APIs, event-sourced orders,
 transactional outbox publication, reservations, simulated payments/refunds, shipping,
 compensation, notifications, CQRS projections, rebuilds and gateway routing. See [Phase 3](phase-3-product-cart.md),
 [Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md), [Phase 7](phase-7-saga.md), [Phase 8](phase-8-projection.md)
@@ -8,6 +8,7 @@ and
 [infrastructure](../infrastructure/README.md). The saga workflows below are implemented; remote order-details
 composition is implemented in [Phase 9](phase-9-composition.md).
 Circuit breakers and consumer dead-letter recovery are implemented in [Phase 10](phase-10-resilience.md).
+JWT validation, HTTP/Kafka tracing and business metrics are implemented in [Phase 11](phase-11-security-observability.md).
 Checkout orchestration remains work for later phases.
 
 ## Ownership and boundaries
@@ -227,8 +228,8 @@ pagination, cart size, quantities and timeouts; apply Jakarta validation to DTOs
 
 Use Micrometer business counters plus Prometheus/Grafana, OTLP tracing to a collector,
 and ECS JSON logs with service, traceId, correlationId, orderId, eventId and eventType.
-Never use order/customer IDs as metric labels. The later observability phase must wire
-trace context across Kafka explicitly, not just add dependency jars.
+Never use order/customer IDs as metric labels. Phase 11 explicitly wires
+trace context through HTTP filters, outbox publishers and Kafka consumer interceptors.
 
 Query serves an eventually consistent projection. Details composition runs bounded
 parallel lookups against owner APIs; optional missing dependencies return explicit

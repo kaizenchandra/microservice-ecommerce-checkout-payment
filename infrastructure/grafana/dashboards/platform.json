@@ -2,7 +2,7 @@
   "uid": "checkout-platform",
   "title": "Checkout Platform",
   "schemaVersion": 40,
-  "version": 2,
+  "version": 3,
   "refresh": "15s",
   "time": {
     "from": "now-15m",
@@ -114,8 +114,18 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application, __name__) (rate({__name__=~\"orders_created_total|inventory_reservations_accepted_total|payments_accepted_total\"}[5m]))",
-          "legendFormat": "{{application}} {{__name__}}"
+          "expr": "sum by (application) (rate(orders_created_total[5m]))",
+          "legendFormat": "{{application}} Orders created"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (application) (rate(inventory_reservations_accepted_total[5m]))",
+          "legendFormat": "{{application}} Reservations accepted"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (application) (rate(payments_accepted_total[5m]))",
+          "legendFormat": "{{application}} Payments accepted"
         }
       ]
     },
@@ -136,8 +146,18 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (__name__) (rate({__name__=~\"payments_completed_total|payments_declined_total|payments_recovery_deferred_total\"}[5m]))",
-          "legendFormat": "{{__name__}}"
+          "expr": "sum by (application) (rate(payments_completed_total[5m]))",
+          "legendFormat": "{{application}} Completed"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (application) (rate(payments_declined_total[5m]))",
+          "legendFormat": "{{application}} Declined"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (application) (rate(payments_recovery_deferred_total[5m]))",
+          "legendFormat": "{{application}} Recovery deferred"
         }
       ]
     },
@@ -180,8 +200,13 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (application, __name__) (rate({__name__=~\"consumer_dlt_published_total|consumer_dlt_failures_total\"}[5m]))",
-          "legendFormat": "{{application}} {{__name__}}"
+          "expr": "sum by (application) (rate(consumer_dlt_published_total[5m]))",
+          "legendFormat": "{{application}} Published"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (application) (rate(consumer_dlt_failures_total[5m]))",
+          "legendFormat": "{{application}} Failed"
         }
       ]
     }
