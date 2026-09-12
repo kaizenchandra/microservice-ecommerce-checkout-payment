@@ -47,12 +47,12 @@ For one outcome, choose `success`, `inventory-rejection`, `payment-decline` or
 `shipment-refund`. Use `--gateway http://localhost:18080` for a different gateway, and
 `--timeout 120` to change the bounded polling window (1–300 seconds per scenario).
 
-| Scenario | Outcome | Inventory | Payment | Refund |
-|---|---|---|---|---|
-| success | COMPLETED | RESERVED | COMPLETED | NONE |
-| inventory-rejection | CANCELLED | REJECTED | UNKNOWN (no payment record) | NONE |
-| payment-decline | CANCELLED | RELEASED | FAILED | NONE |
-| shipment-refund | CANCELLED | RELEASED | COMPLETED | REFUNDED |
+| Scenario            | Outcome   | Inventory | Payment                     | Refund   |
+|---------------------|-----------|-----------|-----------------------------|----------|
+| success             | COMPLETED | RESERVED  | COMPLETED                   | NONE     |
+| inventory-rejection | CANCELLED | REJECTED  | UNKNOWN (no payment record) | NONE     |
+| payment-decline     | CANCELLED | RELEASED  | FAILED                      | NONE     |
+| shipment-refund     | CANCELLED | RELEASED  | COMPLETED                   | REFUNDED |
 
 For each scenario the script:
 
@@ -92,15 +92,15 @@ A successful HTTP response does not mean every asynchronous service has already 
 
 ## Investigate and recover
 
-| Symptom | Read first | Recovery |
-|---|---|---|
-| Query 404 after acceptance | Order API, query consumer lag and DLT counters | Let normal ingestion catch up; repair the consumer and redrive a missing input if necessary |
-| Details section UNAVAILABLE | Owner readiness, logs and circuit-breaker conditions | Restore the owner; later reads/probes recover without changing the order |
-| Payment pending/unknown | Payment view, provider ledger and recovery attempts | Let durable reconciliation retry the same identity; never create a replacement charge |
-| Order COMPENSATING | Refund state and inventory release facts | Restore the failed dependency and allow existing recovery workers to finish |
-| Outbox backlog | Service outbox API, broker availability and publication failures | Restore broker access; existing rows retry with stable event IDs |
-| DLT entry | Source topic/partition/offset and consumer failure | Fix the cause, dry-run the exact DLT position, then explicitly redrive it |
-| Incorrect/missing projection | Journal, buffered events and generation status | Redrive missing inputs first; rebuild only data already present in the journal |
+| Symptom                      | Read first                                                       | Recovery                                                                                    |
+|------------------------------|------------------------------------------------------------------|---------------------------------------------------------------------------------------------|
+| Query 404 after acceptance   | Order API, query consumer lag and DLT counters                   | Let normal ingestion catch up; repair the consumer and redrive a missing input if necessary |
+| Details section UNAVAILABLE  | Owner readiness, logs and circuit-breaker conditions             | Restore the owner; later reads/probes recover without changing the order                    |
+| Payment pending/unknown      | Payment view, provider ledger and recovery attempts              | Let durable reconciliation retry the same identity; never create a replacement charge       |
+| Order COMPENSATING           | Refund state and inventory release facts                         | Restore the failed dependency and allow existing recovery workers to finish                 |
+| Outbox backlog               | Service outbox API, broker availability and publication failures | Restore broker access; existing rows retry with stable event IDs                            |
+| DLT entry                    | Source topic/partition/offset and consumer failure               | Fix the cause, dry-run the exact DLT position, then explicitly redrive it                   |
+| Incorrect/missing projection | Journal, buffered events and generation status                   | Redrive missing inputs first; rebuild only data already present in the journal              |
 
 Read-only admin diagnostics for an order:
 

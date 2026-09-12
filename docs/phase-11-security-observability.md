@@ -109,5 +109,6 @@ Dashboard outcome counters use separate queries and explicit legends to keep suc
 failure and deferred-work series distinct. Phase 11 has not been deployed to the
 shared Compose stack.
 
-Implementation references: [Spring Security JWT validation](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
+Implementation
+references: [Spring Security JWT validation](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
 and [OpenTelemetry Java SDK](https://opentelemetry.io/docs/languages/java/sdk/).

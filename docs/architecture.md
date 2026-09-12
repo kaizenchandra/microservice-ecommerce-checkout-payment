@@ -8,7 +8,8 @@ and
 [infrastructure](../infrastructure/README.md). The saga workflows below are implemented; remote order-details
 composition is implemented in [Phase 9](phase-9-composition.md).
 Circuit breakers and consumer dead-letter recovery are implemented in [Phase 10](phase-10-resilience.md).
-JWT validation, HTTP/Kafka tracing and business metrics are implemented in [Phase 11](phase-11-security-observability.md).
+JWT validation, HTTP/Kafka tracing and business metrics are implemented
+in [Phase 11](phase-11-security-observability.md).
 The coverage map and packaged concurrency/outage verification are documented in [Phase 12](phase-12-verification.md).
 The [Phase 13 walkthrough](phase-13-walkthrough.md) exercises all four order outcomes
 and documents operational recovery. Checkout HTTP orchestration and safe cart clearing

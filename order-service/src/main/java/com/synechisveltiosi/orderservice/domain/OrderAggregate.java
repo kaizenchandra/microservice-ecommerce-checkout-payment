@@ -19,6 +19,7 @@ public final class OrderAggregate {
     private OrderEvents.OrderCreated created;
     private Instant createdAt;
     private Instant updatedAt;
+
     private OrderAggregate(UUID id) {
         this.id = id;
     }

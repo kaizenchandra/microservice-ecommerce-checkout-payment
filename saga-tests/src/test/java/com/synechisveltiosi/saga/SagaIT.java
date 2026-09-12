@@ -40,10 +40,10 @@ class SagaIT {
     static final Map<String, Process> SERVICE_PROCESSES = new HashMap<>();
     static final Map<String, Integer> PORTS = new LinkedHashMap<>();
     static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+    static final String JWT_SECRET = "isolated-saga-signing-key-minimum-32-bytes";
     @TempDir
     static Path logs;
     static String gateway;
-    static final String JWT_SECRET = "isolated-saga-signing-key-minimum-32-bytes";
     static OtlpCapture traces;
     static String traceHeader;
 
@@ -75,7 +75,9 @@ class SagaIT {
     static void startService(String module, String database) throws Exception {
         int port;
         if (PORTS.containsKey(module)) port = PORTS.get(module);
-        else try (var socket = new ServerSocket(0)) { port = socket.getLocalPort(); }
+        else try (var socket = new ServerSocket(0)) {
+            port = socket.getLocalPort();
+        }
         PORTS.put(module, port);
         var root = Path.of("..").toAbsolutePath().normalize();
         var command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-Xmx192m", "-XX:ActiveProcessorCount=2", "-jar",
@@ -86,7 +88,8 @@ class SagaIT {
         if (database != null)
             command.addAll(List.of("--spring.datasource.url=" + database(database), "--spring.datasource.username=" + DB.getUsername(), "--spring.datasource.password=" + DB.getPassword()));
         if (module.equals("inventory-service")) command.add("--spring.kafka.listener.concurrency=3");
-        if (module.equals("cart-service")) command.add("--catalog.base-url=http://localhost:" + PORTS.get("product-service"));
+        if (module.equals("cart-service"))
+            command.add("--catalog.base-url=http://localhost:" + PORTS.get("product-service"));
         if (module.equals("order-query-service")) for (String owner : List.of("payment", "inventory", "shipping"))
             command.add("--details." + owner + "-url=http://localhost:" + PORTS.get(owner + "-service"));
         if (module.equals("api-gateway")) for (var entry : PORTS.entrySet())
@@ -94,7 +97,8 @@ class SagaIT {
                 command.add("--" + entry.getKey().replace("-", "_").toUpperCase(Locale.ROOT) + "_URL=http://localhost:" + entry.getValue());
         Path log = logs.resolve(module + ".log");
         Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        PROCESSES.add(process); SERVICE_PROCESSES.put(module, process);
+        PROCESSES.add(process);
+        SERVICE_PROCESSES.put(module, process);
         long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
         while (System.nanoTime() < deadline) {
             if (!process.isAlive()) fail(module + " exited; log: " + log + "\n" + tail(log));
@@ -118,12 +122,14 @@ class SagaIT {
         for (var process : PROCESSES) process.destroy();
         for (var process : PROCESSES) if (!process.waitFor(10, TimeUnit.SECONDS)) process.destroyForcibly();
         KAFKA.stop();
-        DB.stop(); if (traces != null) traces.close();
+        DB.stop();
+        if (traces != null) traces.close();
     }
 
     static JsonNode request(String method, String path, String user, Object body, int status) throws Exception {
         return request(method, path, user, body, status, UUID.randomUUID());
     }
+
     static JsonNode request(String method, String path, String user, Object body, int status, UUID key) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create(gateway + path)).timeout(Duration.ofSeconds(10))
                 .header("Content-Type", "application/json").header("Idempotency-Key", key.toString());
@@ -207,6 +213,26 @@ class SagaIT {
                     producer.send(new ProducerRecord<>(topic, id.toString(), result.getString(1))).get(10, TimeUnit.SECONDS);
             }
         }
+    }
+
+    static String token(String subject, String secret, String issuer, String audience, int lifetime) throws Exception {
+        var encode = Base64.getUrlEncoder().withoutPadding();
+        long now = java.time.Instant.now().getEpochSecond();
+        String role = subject.equals("admin") ? "ADMIN" : subject.equals("checkout") ? "CHECKOUT" : "CUSTOMER";
+        String body = encode.encodeToString(JSON.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT")).getBytes(StandardCharsets.UTF_8)) + "." +
+                encode.encodeToString(JSON.writeValueAsString(Map.of("iss", issuer, "aud", List.of(audience), "sub", subject, "roles", List.of(role), "iat", now, "exp", now + lifetime)).getBytes(StandardCharsets.UTF_8));
+        var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return body + "." + encode.encodeToString(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    static boolean foundService(OtlpCapture traces, String traceId, String service) {
+        return traces.spans.stream().anyMatch(span -> span.traceId().equals(traceId) && span.service().equals(service) &&
+                span.name().equals(service.equals("api-gateway") ? "http.server" : "kafka.consume"));
+    }
+
+    static int partition(UUID id) {
+        return org.apache.kafka.common.utils.Utils.toPositive(org.apache.kafka.common.utils.Utils.murmur2(id.toString().getBytes(StandardCharsets.UTF_8))) % 3;
     }
 
     @Test
@@ -312,19 +338,20 @@ class SagaIT {
         assertEquals(cancelled, request("GET", "/api/order-views/" + failed.id(), CUSTOMER, null, 200));
     }
 
-    record Order(UUID id, UUID product) {
-    }
     @Test
     void failedProjectionIsDeadLetteredAndRedrivenWithoutRepeatingBusinessEffects() throws Exception {
-        var props = new Properties(); props.put("bootstrap.servers", KAFKA.getBootstrapServers());
-        props.put("enable.auto.commit", "false"); props.put("auto.offset.reset", "earliest");
+        var props = new Properties();
+        props.put("bootstrap.servers", KAFKA.getBootstrapServers());
+        props.put("enable.auto.commit", "false");
+        props.put("auto.offset.reset", "earliest");
         String topic = "order.events.order-query-service.DLT";
         try (var consumer = new org.apache.kafka.clients.consumer.KafkaConsumer<String, String>(props,
                 new org.apache.kafka.common.serialization.StringDeserializer(), new org.apache.kafka.common.serialization.StringDeserializer());
              var connection = DriverManager.getConnection(database("query"), DB.getUsername(), DB.getPassword());
              var statement = connection.createStatement()) {
             var partitions = List.of(new org.apache.kafka.common.TopicPartition(topic, 0), new org.apache.kafka.common.TopicPartition(topic, 1), new org.apache.kafka.common.TopicPartition(topic, 2));
-            consumer.assign(partitions); consumer.seekToEnd(partitions);
+            consumer.assign(partitions);
+            consumer.seekToEnd(partitions);
             for (var partition : partitions) consumer.position(partition);
             // A temporary database fault is isolated to the query projection.
             statement.execute("ALTER TABLE order_projection ADD CONSTRAINT test_dlt_failure CHECK (false) NOT VALID");
@@ -332,33 +359,47 @@ class SagaIT {
             org.apache.kafka.clients.consumer.ConsumerRecord<String, String> dead = null;
             try {
                 order = create("tok_success", "US", "12345", 1);
-                awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED");
+                awaitOrder(order, "COMPLETED");
+                awaitNotification(order, "COMPLETED");
                 long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
                 while (dead == null && System.nanoTime() < deadline) {
                     for (var record : consumer.poll(Duration.ofMillis(250)))
-                        if (order.id().toString().equals(record.key()) && JSON.readTree(record.value()).get("eventType").asString().equals("OrderCreated")) dead = record;
+                        if (order.id().toString().equals(record.key()) && JSON.readTree(record.value()).get("eventType").asString().equals("OrderCreated"))
+                            dead = record;
                 }
                 assertNotNull(dead, "Failed projection must reach its own DLT");
-            } finally { statement.execute("ALTER TABLE order_projection DROP CONSTRAINT test_dlt_failure"); }
+            } finally {
+                statement.execute("ALTER TABLE order_projection DROP CONSTRAINT test_dlt_failure");
+            }
             String original = dead.value();
             var sourcePosition = new org.apache.kafka.common.TopicPartition("order.events", dead.partition());
-            consumer.assign(List.of(sourcePosition)); consumer.seekToEnd(List.of(sourcePosition)); consumer.position(sourcePosition);
+            consumer.assign(List.of(sourcePosition));
+            consumer.seekToEnd(List.of(sourcePosition));
+            consumer.position(sourcePosition);
             for (boolean execute : List.of(false, true)) {
                 var command = new ArrayList<>(List.of("python3", "../infrastructure/scripts/redrive.py", KAFKA.getBootstrapServers(), topic,
                         Integer.toString(dead.partition()), Long.toString(dead.offset())));
                 if (execute) command.add("--execute");
                 Path log = logs.resolve("redrive-" + execute + ".log");
                 var process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start();
-                try { assertTrue(process.waitFor(60, TimeUnit.SECONDS)); assertEquals(0, process.exitValue(), Files.readString(log)); }
-                finally { if (process.isAlive()) process.destroyForcibly(); }
-                if (!execute) assertEquals(0, scalar("query", "SELECT count(*) FROM order_projection WHERE order_id = ?", order.id()));
+                try {
+                    assertTrue(process.waitFor(60, TimeUnit.SECONDS));
+                    assertEquals(0, process.exitValue(), Files.readString(log));
+                } finally {
+                    if (process.isAlive()) process.destroyForcibly();
+                }
+                if (!execute)
+                    assertEquals(0, scalar("query", "SELECT count(*) FROM order_projection WHERE order_id = ?", order.id()));
                 else {
                     org.apache.kafka.clients.consumer.ConsumerRecord<String, String> replayed = null;
                     long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
                     while (replayed == null && System.nanoTime() < deadline)
                         for (var record : consumer.poll(Duration.ofMillis(250)))
-                            if (dead.key().equals(record.key()) && JSON.readTree(record.value()).get("eventId").equals(JSON.readTree(original).get("eventId"))) replayed = record;
-                    assertNotNull(replayed); assertEquals(original, replayed.value()); assertEquals(dead.key(), replayed.key());
+                            if (dead.key().equals(record.key()) && JSON.readTree(record.value()).get("eventId").equals(JSON.readTree(original).get("eventId")))
+                                replayed = record;
+                    assertNotNull(replayed);
+                    assertEquals(original, replayed.value());
+                    assertEquals(dead.key(), replayed.key());
                 }
             }
             // Replay other query DLT facts too; gaps are deliberately preserved until recovery.
@@ -373,20 +414,22 @@ class SagaIT {
             assertEquals(order.id().toString(), JSON.readTree(original).get("aggregateId").asString());
         }
     }
-    static String token(String subject, String secret, String issuer, String audience, int lifetime) throws Exception {
-        var encode = Base64.getUrlEncoder().withoutPadding(); long now = java.time.Instant.now().getEpochSecond();
-        String role = subject.equals("admin") ? "ADMIN" : subject.equals("checkout") ? "CHECKOUT" : "CUSTOMER";
-        String body = encode.encodeToString(JSON.writeValueAsString(Map.of("alg", "HS256", "typ", "JWT")).getBytes(StandardCharsets.UTF_8)) + "." +
-                encode.encodeToString(JSON.writeValueAsString(Map.of("iss", issuer, "aud", List.of(audience), "sub", subject, "roles", List.of(role), "iat", now, "exp", now + lifetime)).getBytes(StandardCharsets.UTF_8));
-        var mac = javax.crypto.Mac.getInstance("HmacSHA256"); mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return body + "." + encode.encodeToString(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
-    }
-    @Test void jwtIsValidatedAtGatewayAndOwnerServices() throws Exception {
+
+    @Test
+    void jwtIsValidatedAtGatewayAndOwnerServices() throws Exception {
         var issuer = new ProcessBuilder("python3", "../infrastructure/scripts/demo_token.py", "--identity", "customer");
-        issuer.environment().put("JWT_SECRET", JWT_SECRET); issuer.environment().put("JWT_ISSUER", "checkout-demo"); issuer.environment().put("JWT_AUDIENCE", "ecommerce-api");
-        var process = issuer.start(); String valid;
-        try { assertTrue(process.waitFor(10, TimeUnit.SECONDS)); assertEquals(0, process.exitValue()); valid = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim(); }
-        finally { if (process.isAlive()) process.destroyForcibly(); }
+        issuer.environment().put("JWT_SECRET", JWT_SECRET);
+        issuer.environment().put("JWT_ISSUER", "checkout-demo");
+        issuer.environment().put("JWT_AUDIENCE", "ecommerce-api");
+        var process = issuer.start();
+        String valid;
+        try {
+            assertTrue(process.waitFor(10, TimeUnit.SECONDS));
+            assertEquals(0, process.exitValue());
+            valid = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+        }
         for (String base : List.of(gateway, "http://localhost:" + PORTS.get("order-service"), "http://localhost:" + PORTS.get("order-query-service"))) {
             String path = base.equals("http://localhost:" + PORTS.get("order-service")) ? "/api/orders/" : "/api/order-views/";
             for (String authorization : List.of("Basic " + Base64.getEncoder().encodeToString((CUSTOMER + ":" + PASSWORD).getBytes(StandardCharsets.UTF_8)),
@@ -395,16 +438,26 @@ class SagaIT {
                     "Bearer " + token(CUSTOMER, JWT_SECRET, "checkout-demo", "ecommerce-api", -120),
                     "Bearer " + token(CUSTOMER, "wrong-signing-secret-at-least-32-bytes", "checkout-demo", "ecommerce-api", 900))) {
                 var response = HTTP.send(HttpRequest.newBuilder(URI.create(base + path + UUID.randomUUID())).header("Authorization", authorization).build(), HttpResponse.BodyHandlers.ofString());
-                assertEquals(401, response.statusCode()); assertFalse(response.body().contains(JWT_SECRET));
+                assertEquals(401, response.statusCode());
+                assertFalse(response.body().contains(JWT_SECRET));
             }
             assertEquals(404, HTTP.send(HttpRequest.newBuilder(URI.create(base + path + UUID.randomUUID())).header("Authorization", "Bearer " + valid).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
         }
     }
-    @Test void exportedTraceConnectsHttpAndKafkaAcrossSaga() throws Exception {
-        String traceId = UUID.randomUUID().toString().replace("-", ""); traceHeader = "00-" + traceId + "-1234567890abcdef-01";
+
+    @Test
+    void exportedTraceConnectsHttpAndKafkaAcrossSaga() throws Exception {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        traceHeader = "00-" + traceId + "-1234567890abcdef-01";
         Order order;
-        try { order = create("tok_success", "US", "12345", 1); awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED"); awaitView(order, "COMPLETED"); }
-        finally { traceHeader = null; }
+        try {
+            order = create("tok_success", "US", "12345", 1);
+            awaitOrder(order, "COMPLETED");
+            awaitNotification(order, "COMPLETED");
+            awaitView(order, "COMPLETED");
+        } finally {
+            traceHeader = null;
+        }
         Set<String> expected = Set.of("api-gateway", "order-service", "inventory-service", "payment-service", "shipping-service", "notification-service", "order-query-service");
         long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
         List<OtlpCapture.ExportedSpan> found;
@@ -412,26 +465,28 @@ class SagaIT {
             found = traces.spans.stream().filter(span -> span.traceId().equals(traceId)).toList();
             var ids = found.stream().map(OtlpCapture.ExportedSpan::spanId).collect(java.util.stream.Collectors.toSet());
             if (expected.stream().allMatch(service -> foundService(traces, traceId, service)) &&
-                    found.stream().filter(span -> span.name().equals("kafka.consume")).allMatch(span -> ids.contains(span.parentId()))) break;
+                    found.stream().filter(span -> span.name().equals("kafka.consume")).allMatch(span -> ids.contains(span.parentId())))
+                break;
             if (System.nanoTime() >= deadline) fail("Missing exported saga spans: " + found);
             Thread.sleep(100);
         }
         assertTrue(found.stream().anyMatch(span -> span.service().equals("api-gateway") && span.name().equals("http.server")));
-        for (String service : expected) if (!service.equals("api-gateway"))
-            assertTrue(found.stream().anyMatch(span -> span.service().equals(service) && span.name().equals("kafka.consume")), service);
+        for (String service : expected)
+            if (!service.equals("api-gateway"))
+                assertTrue(found.stream().anyMatch(span -> span.service().equals(service) && span.name().equals("kafka.consume")), service);
         var ids = found.stream().map(OtlpCapture.ExportedSpan::spanId).collect(java.util.stream.Collectors.toSet());
         assertTrue(found.stream().filter(span -> span.name().equals("kafka.consume")).allMatch(span -> ids.contains(span.parentId())), "Every consumed span must reference an exported producer span");
         var metrics = HTTP.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORTS.get("payment-service") + "/actuator/prometheus")).build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, metrics.statusCode()); assertTrue(metrics.body().contains("payments_accepted_total"));
-        assertTrue(metrics.body().contains("messaging_processed_total")); assertFalse(metrics.body().contains(order.id().toString()));
+        assertEquals(200, metrics.statusCode());
+        assertTrue(metrics.body().contains("payments_accepted_total"));
+        assertTrue(metrics.body().contains("messaging_processed_total"));
+        assertFalse(metrics.body().contains(order.id().toString()));
         assertTrue(Files.readAllLines(logs.resolve("inventory-service.log")).stream()
                 .anyMatch(line -> line.contains(traceId) && line.contains("eventId") && line.contains("spanId")), "Consumer logs must carry trace/span/event context together");
     }
-    static boolean foundService(OtlpCapture traces, String traceId, String service) {
-        return traces.spans.stream().anyMatch(span -> span.traceId().equals(traceId) && span.service().equals(service) &&
-                span.name().equals(service.equals("api-gateway") ? "http.server" : "kafka.consume"));
-    }
-    @Test void jwtCatalogCartFlowSurvivesRealCatalogOutageWithoutMutation() throws Exception {
+
+    @Test
+    void jwtCatalogCartFlowSurvivesRealCatalogOutageWithoutMutation() throws Exception {
         var product = request("POST", "/api/products", "admin", Map.of("sku", "P12-" + UUID.randomUUID().toString().replace("-", "").toUpperCase(Locale.ROOT),
                 "name", "Phase 12 fixture", "description", "Isolated catalog fixture", "price", Map.of("amount", "12.50", "currency", "USD")), 201);
         String productId = product.get("id").asString();
@@ -450,7 +505,10 @@ class SagaIT {
             request("POST", path + "/items", CUSTOMER, next, 503);
             assertEquals(before, request("GET", path, CUSTOMER, null, 200));
         } finally {
-            if (catalog.isAlive()) { catalog.destroyForcibly(); assertTrue(catalog.waitFor(5, TimeUnit.SECONDS)); }
+            if (catalog.isAlive()) {
+                catalog.destroyForcibly();
+                assertTrue(catalog.waitFor(5, TimeUnit.SECONDS));
+            }
             startService("product-service", "product");
         }
         var recovered = request("POST", path + "/items", CUSTOMER, next, 200);
@@ -460,78 +518,114 @@ class SagaIT {
         assertEquals(recovered, request("GET", path, CUSTOMER, null, 200));
     }
 
-    @Test void concurrentGatewayRetriesCreateOneOrderAndOneCharge() throws Exception {
-        var order = new Order(UUID.randomUUID(), UUID.randomUUID()); var key = UUID.randomUUID();
+    @Test
+    void concurrentGatewayRetriesCreateOneOrderAndOneCharge() throws Exception {
+        var order = new Order(UUID.randomUUID(), UUID.randomUUID());
+        var key = UUID.randomUUID();
         request("POST", "/api/inventory/stock", "admin", Map.of("productId", order.product(), "onHand", 1), 201);
         var command = orderCommand(order.id(), order.product(), "tok_success", "US", "12345");
-        var ready = new java.util.concurrent.CountDownLatch(6); var go = new java.util.concurrent.CountDownLatch(1);
+        var ready = new java.util.concurrent.CountDownLatch(6);
+        var go = new java.util.concurrent.CountDownLatch(1);
         try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
             var results = new ArrayList<java.util.concurrent.Future<JsonNode>>();
-            for (int i = 0; i < 6; i++) results.add(executor.submit(() -> {
-                ready.countDown(); assertTrue(go.await(5, TimeUnit.SECONDS));
-                return request("POST", "/api/orders", "checkout", command, 202, key);
-            }));
-            try { assertTrue(ready.await(5, TimeUnit.SECONDS)); } finally { go.countDown(); }
+            for (int i = 0; i < 6; i++)
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    assertTrue(go.await(5, TimeUnit.SECONDS));
+                    return request("POST", "/api/orders", "checkout", command, 202, key);
+                }));
+            try {
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+            } finally {
+                go.countDown();
+            }
             JsonNode first = results.getFirst().get(15, TimeUnit.SECONDS);
             for (var result : results) assertEquals(first, result.get(15, TimeUnit.SECONDS));
         }
-        awaitOrder(order, "COMPLETED"); awaitNotification(order, "COMPLETED");
+        awaitOrder(order, "COMPLETED");
+        awaitNotification(order, "COMPLETED");
         assertEquals(1, scalar("order", "SELECT count(*) FROM order_command WHERE order_id = ?", order.id()));
         assertEquals(1, scalar("order", "SELECT count(*) FROM domain_event WHERE aggregate_id = ? AND event_type = 'OrderCreated'", order.id()));
         assertEquals(1, scalar("payment", "SELECT charge_count FROM provider_charge WHERE payment_id = ?", order.id()));
-        var changed = new HashMap<>(command); changed.put("cartVersion", 2);
+        var changed = new HashMap<>(command);
+        changed.put("cartVersion", 2);
         request("POST", "/api/orders", "checkout", changed, 409, key);
         assertEquals(1, scalar("payment", "SELECT charge_count FROM provider_charge WHERE payment_id = ?", order.id()));
     }
 
-    @Test void concurrentOrdersForLastUnitProduceOneCompletionAndOneRejection() throws Exception {
-        var product = UUID.randomUUID(); var a = new Order(UUID.randomUUID(), product);
+    @Test
+    void concurrentOrdersForLastUnitProduceOneCompletionAndOneRejection() throws Exception {
+        var product = UUID.randomUUID();
+        var a = new Order(UUID.randomUUID(), product);
         UUID second;
-        do { second = UUID.randomUUID(); } while (partition(a.id()) == partition(second));
+        do {
+            second = UUID.randomUUID();
+        } while (partition(a.id()) == partition(second));
         var b = new Order(second, product);
         request("POST", "/api/inventory/stock", "admin", Map.of("productId", product, "onHand", 1), 201);
-        var ready = new java.util.concurrent.CountDownLatch(2); var go = new java.util.concurrent.CountDownLatch(1);
+        var ready = new java.util.concurrent.CountDownLatch(2);
+        var go = new java.util.concurrent.CountDownLatch(1);
         try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
             var results = new ArrayList<java.util.concurrent.Future<JsonNode>>();
-            for (var order : List.of(a, b)) results.add(executor.submit(() -> {
-                ready.countDown(); assertTrue(go.await(5, TimeUnit.SECONDS));
-                return request("POST", "/api/orders", "checkout", orderCommand(order.id(), product, "tok_success", "US", "12345"), 202);
-            }));
-            try { assertTrue(ready.await(5, TimeUnit.SECONDS)); } finally { go.countDown(); }
+            for (var order : List.of(a, b))
+                results.add(executor.submit(() -> {
+                    ready.countDown();
+                    assertTrue(go.await(5, TimeUnit.SECONDS));
+                    return request("POST", "/api/orders", "checkout", orderCommand(order.id(), product, "tok_success", "US", "12345"), 202);
+                }));
+            try {
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+            } finally {
+                go.countDown();
+            }
             for (var result : results) result.get(15, TimeUnit.SECONDS);
         }
-        var outcomes = new ArrayList<String>(); long charges = 0;
+        var outcomes = new ArrayList<String>();
+        long charges = 0;
         for (var order : List.of(a, b)) {
-            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos(); String outcome;
+            long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+            String outcome;
             do {
                 outcome = request("GET", "/api/orders/" + order.id(), CUSTOMER, null, 200).get("status").asString();
                 if (Set.of("COMPLETED", "CANCELLED").contains(outcome)) break;
-                assertTrue(System.nanoTime() < deadline, "Competing order must finish"); Thread.sleep(100);
+                assertTrue(System.nanoTime() < deadline, "Competing order must finish");
+                Thread.sleep(100);
             } while (true);
-            outcomes.add(outcome); awaitNotification(order, outcome); awaitView(order, outcome);
+            outcomes.add(outcome);
+            awaitNotification(order, outcome);
+            awaitView(order, outcome);
             charges += scalar("payment", "SELECT coalesce(sum(charge_count), 0) FROM provider_charge WHERE payment_id = ?", order.id());
         }
-        assertEquals(1, Collections.frequency(outcomes, "COMPLETED")); assertEquals(1, Collections.frequency(outcomes, "CANCELLED"));
+        assertEquals(1, Collections.frequency(outcomes, "COMPLETED"));
+        assertEquals(1, Collections.frequency(outcomes, "CANCELLED"));
         assertEquals(1, charges);
         var stock = request("GET", "/api/inventory/stock/" + product, "admin", null, 200);
-        assertEquals(1, stock.get("reserved").asInt()); assertEquals(0, stock.get("available").asInt());
+        assertEquals(1, stock.get("reserved").asInt());
+        assertEquals(0, stock.get("available").asInt());
     }
-    static int partition(UUID id) {
-        return org.apache.kafka.common.utils.Utils.toPositive(org.apache.kafka.common.utils.Utils.murmur2(id.toString().getBytes(StandardCharsets.UTF_8))) % 3;
-    }
-    @Test void executableWalkthroughCoversAllFourOutcomes() throws Exception {
+
+    @Test
+    void executableWalkthroughCoversAllFourOutcomes() throws Exception {
         var builder = new ProcessBuilder("python3", "../infrastructure/scripts/walkthrough.py", "--gateway", gateway,
                 "--scenario", "all", "--timeout", "60");
         builder.environment().put("JWT_SECRET", JWT_SECRET);
-        builder.environment().put("JWT_ISSUER", "checkout-demo"); builder.environment().put("JWT_AUDIENCE", "ecommerce-api");
+        builder.environment().put("JWT_ISSUER", "checkout-demo");
+        builder.environment().put("JWT_AUDIENCE", "ecommerce-api");
         Path log = logs.resolve("walkthrough.jsonl");
         var process = builder.redirectErrorStream(true).redirectOutput(log.toFile()).start();
-        try { assertTrue(process.waitFor(300, TimeUnit.SECONDS), "Walkthrough must complete within its scenario budgets");
-            assertEquals(0, process.exitValue(), Files.readString(log)); }
-        finally { if (process.isAlive()) process.destroyForcibly(); }
-        var lines = Files.readAllLines(log); assertEquals(4, lines.size()); var scenarios = new HashSet<String>();
+        try {
+            assertTrue(process.waitFor(300, TimeUnit.SECONDS), "Walkthrough must complete within its scenario budgets");
+            assertEquals(0, process.exitValue(), Files.readString(log));
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+        }
+        var lines = Files.readAllLines(log);
+        assertEquals(4, lines.size());
+        var scenarios = new HashSet<String>();
         for (String line : lines) {
-            var result = JSON.readTree(line); String scenario = result.get("scenario").asString(); scenarios.add(scenario);
+            var result = JSON.readTree(line);
+            String scenario = result.get("scenario").asString();
+            scenarios.add(scenario);
             var id = UUID.fromString(result.get("orderId").asString());
             assertEquals(scenario.equals("success") ? "COMPLETED" : "CANCELLED", result.get("status").asString());
             assertTrue(result.get("notified").asBoolean());
@@ -540,8 +634,12 @@ class SagaIT {
             assertEquals(1, scalar("notification", "SELECT count(*) FROM notification WHERE order_id = ?", id));
             assertEquals(Set.of("success", "shipment-refund").contains(scenario) ? 1 : 0,
                     scalar("payment", "SELECT coalesce(sum(charge_count), 0) FROM provider_charge WHERE payment_id = ?", id));
-            assertFalse(line.contains("tok_success")); assertFalse(line.contains(JWT_SECRET));
+            assertFalse(line.contains("tok_success"));
+            assertFalse(line.contains(JWT_SECRET));
         }
         assertEquals(Set.of("success", "inventory-rejection", "payment-decline", "shipment-refund"), scenarios);
+    }
+
+    record Order(UUID id, UUID product) {
     }
 }

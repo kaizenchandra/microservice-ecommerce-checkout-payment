@@ -94,5 +94,6 @@ modules: 80 tests with zero failures, errors or skips. Compose configuration, Py
 and shell syntax, and whitespace checks passed. This phase has not been deployed to
 the shared Compose stack.
 
-The policies use the documented [Spring Kafka error-handler recovery contract](https://docs.spring.io/spring-kafka/reference/kafka/annotation-error-handling.html)
+The policies use the
+documented [Spring Kafka error-handler recovery contract](https://docs.spring.io/spring-kafka/reference/kafka/annotation-error-handling.html)
 and [Resilience4j circuit-breaker states](https://resilience4j.readme.io/docs/circuitbreaker).

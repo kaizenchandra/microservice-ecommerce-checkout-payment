@@ -2,6 +2,9 @@ package com.synechisveltiosi.orderqueryservice.infrastructure;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.synechisveltiosi.orderqueryservice.domain.OrderView;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -10,32 +13,22 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
-import io.github.resilience4j.circuitbreaker.*;
-import java.util.Map;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
 
 @Component
 public class OrderDetailsClient {
+    final Map<Class<?>, CircuitBreaker> breakers = Map.of(
+            Payment.class, breaker("payment"), Inventory.class, breaker("inventory"), Shipping.class, breaker("shipping"));
     private final RestClient payment, inventory, shipping;
     private final HttpClient http;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     // No waiting queue: excess requests receive explicit partial availability.
     private final Semaphore permits;
     private final long timeoutMillis;
-    final Map<Class<?>, CircuitBreaker> breakers = Map.of(
-            Payment.class, breaker("payment"), Inventory.class, breaker("inventory"), Shipping.class, breaker("shipping"));
-
-    private static CircuitBreaker breaker(String name) {
-        return CircuitBreaker.of(name, CircuitBreakerConfig.custom()
-                .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
-                .waitDurationInOpenState(Duration.ofSeconds(10)).permittedNumberOfCallsInHalfOpenState(1)
-                .ignoreException(error -> error instanceof RestClientResponseException response &&
-                        response.getStatusCode().is4xxClientError() && response.getStatusCode().value() != 429)
-                .build());
-    }
 
     public OrderDetailsClient(RestClient.Builder builder,
                               @Value("${details.payment-url:http://localhost:8086}") String paymentUrl,
@@ -54,6 +47,15 @@ public class OrderDetailsClient {
         payment = builder.clone().baseUrl(paymentUrl).requestFactory(factory).build();
         inventory = builder.clone().baseUrl(inventoryUrl).requestFactory(factory).build();
         shipping = builder.clone().baseUrl(shippingUrl).requestFactory(factory).build();
+    }
+
+    private static CircuitBreaker breaker(String name) {
+        return CircuitBreaker.of(name, CircuitBreakerConfig.custom()
+                .slidingWindowSize(10).minimumNumberOfCalls(5).failureRateThreshold(50)
+                .waitDurationInOpenState(Duration.ofSeconds(10)).permittedNumberOfCallsInHalfOpenState(1)
+                .ignoreException(error -> error instanceof RestClientResponseException response &&
+                        response.getStatusCode().is4xxClientError() && response.getStatusCode().value() != 429)
+                .build());
     }
 
     private static boolean matches(OrderView view, UUID order, UUID customer, String status) {

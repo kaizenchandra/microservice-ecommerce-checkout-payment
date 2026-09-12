@@ -10,13 +10,13 @@ import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.DefaultErrorHandler;
-import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.BackOffExecution;
-import java.util.concurrent.ThreadLocalRandom;
+import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 @Configuration

@@ -13,6 +13,7 @@ import java.util.UUID;
 public class CompensationTransactions {
     private final JdbcTemplate jdbc;
     private final InventoryTransactions inventory;
+
     public CompensationTransactions(JdbcTemplate jdbc, InventoryTransactions inventory) {
         this.jdbc = jdbc;
         this.inventory = inventory;

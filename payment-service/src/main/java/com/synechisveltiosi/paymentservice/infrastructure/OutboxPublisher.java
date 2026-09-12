@@ -31,7 +31,8 @@ public class OutboxPublisher {
         this.jdbc = jdbc;
         this.kafka = kafka;
         this.codec = codec;
-        this.metrics = metrics; this.telemetry = telemetry;
+        this.metrics = metrics;
+        this.telemetry = telemetry;
     }
 
     /**
@@ -70,8 +71,12 @@ public class OutboxPublisher {
             try (var trace = telemetry.start("kafka.publish", io.opentelemetry.api.trace.SpanKind.PRODUCER, event.traceparent())) {
                 record.headers().remove("traceparent");
                 record.headers().add("traceparent", Telemetry.currentTraceparentOr(event.traceparent()).getBytes(StandardCharsets.UTF_8));
-                try { kafka.send(record).get(5, TimeUnit.SECONDS); }
-                catch (Exception error) { trace.failed(); throw error; }
+                try {
+                    kafka.send(record).get(5, TimeUnit.SECONDS);
+                } catch (Exception error) {
+                    trace.failed();
+                    throw error;
+                }
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Outbox publisher interrupted", interrupted);

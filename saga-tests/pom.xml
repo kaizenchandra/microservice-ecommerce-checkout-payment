@@ -9,8 +9,20 @@
     </parent>
     <artifactId>saga-tests</artifactId>
     <dependencies>
-        <dependency><groupId>com.synechisveltiosi</groupId><artifactId>product-service</artifactId><version>${project.version}</version><type>pom</type><scope>test</scope></dependency>
-        <dependency><groupId>com.synechisveltiosi</groupId><artifactId>cart-service</artifactId><version>${project.version}</version><type>pom</type><scope>test</scope></dependency>
+        <dependency>
+            <groupId>com.synechisveltiosi</groupId>
+            <artifactId>product-service</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.synechisveltiosi</groupId>
+            <artifactId>cart-service</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

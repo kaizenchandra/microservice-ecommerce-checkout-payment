@@ -19,6 +19,7 @@ import java.util.UUID;
 public class OrderSaga {
     private final JdbcTemplate jdbc;
     private final OrderEventStore events;
+
     public OrderSaga(JdbcTemplate jdbc, OrderEventStore events) {
         this.jdbc = jdbc;
         this.events = events;

@@ -14,17 +14,17 @@ shared collector or Tempo.
 
 ## Coverage map
 
-| Boundary | Evidence |
-|---|---|
-| Domain and event contracts | Money validation, order transitions, schema compatibility, event identity and metadata |
-| Product and cart | Ownership, price/quantity validation, optimistic version conflicts, concurrent updates and catalog failures |
-| Order/event store | Idempotent commands, duplicate and changed requests, concurrent append/version handling, transaction rollback and ordered outbox publication |
-| Inventory | Last-unit races with a database barrier, duplicate reservations, release, rollback, stock invariants and real Kafka consumption |
-| Payment/refund | Declines, response loss, stable provider effects, lease fencing, rollback, retries and restart recovery |
-| Projection | Gaps and reordered facts, deduplication, ownership, generations, concurrent ingestion/rebuild, failed rebuild and restart recovery |
-| Resilience | Circuit opening/probes, dependency isolation, timeout/concurrency bounds, DLT acknowledgment failures and real redrive |
-| Security/observability | JWT signatures/claims/roles, gateway and owner checks, OTLP parent relationships, MDC context and bounded metrics |
-| Packaged workflows | Completion, rejection, decline, shipment failure/refund, duplicate events, notifications and gateway projection rebuild |
+| Boundary                   | Evidence                                                                                                                                     |
+|----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| Domain and event contracts | Money validation, order transitions, schema compatibility, event identity and metadata                                                       |
+| Product and cart           | Ownership, price/quantity validation, optimistic version conflicts, concurrent updates and catalog failures                                  |
+| Order/event store          | Idempotent commands, duplicate and changed requests, concurrent append/version handling, transaction rollback and ordered outbox publication |
+| Inventory                  | Last-unit races with a database barrier, duplicate reservations, release, rollback, stock invariants and real Kafka consumption              |
+| Payment/refund             | Declines, response loss, stable provider effects, lease fencing, rollback, retries and restart recovery                                      |
+| Projection                 | Gaps and reordered facts, deduplication, ownership, generations, concurrent ingestion/rebuild, failed rebuild and restart recovery           |
+| Resilience                 | Circuit opening/probes, dependency isolation, timeout/concurrency bounds, DLT acknowledgment failures and real redrive                       |
+| Security/observability     | JWT signatures/claims/roles, gateway and owner checks, OTLP parent relationships, MDC context and bounded metrics                            |
+| Packaged workflows         | Completion, rejection, decline, shipment failure/refund, duplicate events, notifications and gateway projection rebuild                      |
 
 ## Additional packaged scenarios
 
