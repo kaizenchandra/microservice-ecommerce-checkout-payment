@@ -1,6 +1,6 @@
 # Phase 1 — architecture and implementation contract
 
-Status: phases 1–12 are implemented, including product/cart APIs, event-sourced orders,
+Status: phases 1–13 are implemented, including product/cart APIs, event-sourced orders,
 transactional outbox publication, reservations, simulated payments/refunds, shipping,
 compensation, notifications, CQRS projections, rebuilds and gateway routing. See [Phase 3](phase-3-product-cart.md),
 [Phase 4](phase-4-order-outbox.md), [Phase 5](phase-5-inventory.md), [Phase 6](phase-6-payment.md), [Phase 7](phase-7-saga.md), [Phase 8](phase-8-projection.md)
@@ -10,7 +10,9 @@ composition is implemented in [Phase 9](phase-9-composition.md).
 Circuit breakers and consumer dead-letter recovery are implemented in [Phase 10](phase-10-resilience.md).
 JWT validation, HTTP/Kafka tracing and business metrics are implemented in [Phase 11](phase-11-security-observability.md).
 The coverage map and packaged concurrency/outage verification are documented in [Phase 12](phase-12-verification.md).
-Checkout orchestration remains work for later phases.
+The [Phase 13 walkthrough](phase-13-walkthrough.md) exercises all four order outcomes
+and documents operational recovery. Checkout HTTP orchestration and safe cart clearing
+remain unimplemented; the walkthrough uses an explicit trusted order handoff.
 
 ## Ownership and boundaries
 

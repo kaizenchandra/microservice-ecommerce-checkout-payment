@@ -149,7 +149,10 @@ one command record, one notification and the expected provider charge count per 
 The existing suite covers DLT/redrive, rebuilds, restart recovery, concurrency, JWT and
 actual exported trace relationships. See [the coverage map](phase-12-verification.md).
 
-Phase 13 verification is in progress. The current shared Compose stack has not been
-rebuilt or populated by this phase. Remaining product scope includes checkout HTTP
+On 2026-09-12, Java 21 `mvn -o verify` passed all 13 reactor modules: 90 tests,
+zero failures, errors or skips, including all 13 packaged saga tests and all four
+walkthrough outcomes. Compose configuration, shell/Python syntax, dashboard JSON
+and whitespace checks passed. The shared Compose stack has not been rebuilt or
+populated by this phase. Remaining product scope includes checkout HTTP
 orchestration, production identity-provider integration and production-grade durability,
 retention and load validation. The documented milestones do not imply those are complete.

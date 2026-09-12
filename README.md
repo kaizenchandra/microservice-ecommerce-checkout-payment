@@ -1,7 +1,7 @@
 # E-commerce checkout and payment platform
 
 Java 21 / Spring Boot 4 educational microservices project, implemented incrementally in
-the requested thirteen phases. **Phases 1–12 are implemented, including event-sourced orders and a complete simulated
+the requested thirteen phases. **Phases 1–13 are implemented, including event-sourced orders and a complete simulated
 checkout saga from accepted order through shipping, compensation and notification.**
 Docker Compose provisions isolated databases, Kafka, Redis and observability alongside
 all ten applications. Product/cart/order APIs are available through the gateway with local
@@ -38,6 +38,8 @@ See [Phase 11: Security and observability](docs/phase-11-security-observability.
 for JWTs, HTTP/Kafka traces and business metrics.
 See [Phase 12: Integrated verification](docs/phase-12-verification.md) for the coverage
 map, isolated test setup and packaged concurrency/outage scenarios.
+See [Phase 13: Executable walkthrough](docs/phase-13-walkthrough.md) for all four
+order outcomes, result inspection and operational recovery.
 
 ## Current directory structure
 
@@ -148,10 +150,17 @@ success and compensation sequence diagrams, Kafka contracts and concurrency rule
 | 10    | Resilience, retries, DLT and failure controls                                            | Implemented |
 | 11    | JWT and end-to-end tracing / business metrics                                            | Implemented |
 | 12    | Integration, API, messaging, concurrency and saga tests                                  | Implemented |
-| 13    | Executable full walkthrough, operational recovery and final documentation                | Next        |
+| 13    | Executable order walkthrough, operational recovery and final documentation               | Implemented |
 
-End-to-end curl examples will be added with working APIs so the walkthrough remains
-executable. The final target is `docker compose up -d --build` plus `./mvnw clean verify`.
+After starting the current Compose stack, run the retained synthetic walkthrough:
+
+```bash
+python3 infrastructure/scripts/walkthrough.py --scenario all
+```
+
+The script exercises product/cart APIs and explicitly submits an order using the trusted
+checkout identity. Checkout HTTP orchestration and safe cart clearing remain unimplemented.
+See the [walkthrough guide](docs/phase-13-walkthrough.md) before running it.
 
 ## Phase 1 verification record
 
@@ -305,3 +314,15 @@ and two orders competing for the last unit through separate Kafka partitions.
 Compose configuration, shell/Python syntax, dashboard JSON and whitespace checks
 passed. See [Integrated verification](docs/phase-12-verification.md) for coverage and
 limits. Checkout HTTP orchestration remains absent; shared-stack deployment is separate.
+
+## Phase 13 verification record
+
+Java 21 `mvn -o verify` passed all 13 reactor modules on 2026-09-12: 90 tests,
+zero failures, errors or skips. All 13 packaged saga tests passed, including the exact
+Python walkthrough for success, inventory rejection, payment decline and shipment
+failure with refund. Checks verify idempotent acceptance, terminal projections,
+customer isolation, owner details and single business effects. Compose configuration,
+shell/Python syntax, dashboard JSON and whitespace checks passed.
+See [Executable walkthrough and operations](docs/phase-13-walkthrough.md).
+The shared Compose stack was not rebuilt or populated. Checkout HTTP orchestration
+and safe cart clearing remain unimplemented.
